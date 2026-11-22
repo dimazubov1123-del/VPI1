@@ -1,12 +1,21 @@
 import { createServer } from "node:http";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
 import { RoomManager } from "./roomManager.js";
 const PORT = Number(process.env.PORT || 3001);
+const HERE = dirname(fileURLToPath(import.meta.url));
 const origins = (process.env.ALLOWED_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean);
 const rooms = new RoomManager();
 const sessions = new Map();
-const server = createServer((req,res) => {
+const server = createServer(async (req,res) => {
   if (req.url === "/" || req.url === "/health") { res.writeHead(200,{"content-type":"application/json","cache-control":"no-store"}); res.end(JSON.stringify({ok:true,service:"vpi15-multiplayer"})); return; }
+  if (req.url === "/lobby" || req.url === "/lobby/") {
+    try { const html = await readFile(join(HERE,"lobby.html")); res.writeHead(200,{"content-type":"text/html; charset=utf-8","cache-control":"no-store"}); res.end(html); }
+    catch { res.writeHead(500); res.end("Lobby unavailable"); }
+    return;
+  }
   res.writeHead(404,{"content-type":"application/json"}); res.end(JSON.stringify({error:"NOT_FOUND"}));
 });
 const wss = new WebSocketServer({server,path:"/ws",maxPayload:300*1024,verifyClient:({origin},done) => done(origins.length===0 || !origin || origins.includes(origin),403,"Origin not allowed")});
@@ -25,7 +34,8 @@ wss.on("connection",ws => {
       const {code,playerId}=session;
       if(msg.type==="ping") { send(ws,"pong",{at:Date.now()}); return; }
       let room;
-      if(msg.type==="set_country") room=rooms.setCountry(code,playerId,msg.countryId);
+      if(msg.type==="configure_lobby") room=rooms.configureLobby(code,playerId,msg.config);
+      else if(msg.type==="assign_country") room=rooms.assignCountry(code,playerId,msg.playerId,msg.countryId);
       else if(msg.type==="start_game") room=rooms.startGame(code,playerId,msg.state ?? null);
       else if(msg.type==="update_state") room=rooms.updateState(code,playerId,msg.state);
       else throw new Error("UNKNOWN_MESSAGE");
