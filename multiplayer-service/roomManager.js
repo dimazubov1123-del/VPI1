@@ -15,7 +15,7 @@ export class RoomManager {
     let code;
     do { code = this.codeFactory(); } while (this.rooms.has(code));
     const player = this.#newPlayer(name);
-    const room = { code, hostId: player.id, players: new Map([[player.id, player]]), status: "lobby", config: { scenarioId: "", scenarioName: "", gameMode: "standard", settings: {} }, state: null, savedAssignments: {}, createdAt: this.now(), updatedAt: this.now() };
+    const room = { code, hostId: player.id, players: new Map([[player.id, player]]), status: "lobby", config: { scenarioId: "", scenarioName: "", gameMode: "standard", settings: {} }, state: null, diplomacyMessages: [], savedAssignments: {}, createdAt: this.now(), updatedAt: this.now() };
     this.rooms.set(code, room);
     return { room: this.snapshot(room), player: this.#credentials(player) };
   }
@@ -95,6 +95,40 @@ export class RoomManager {
     if (room.status !== "playing") throw new Error("GAME_NOT_STARTED");
     room.state = this.#validateState(state); room.updatedAt = this.now();
     return this.snapshot(room);
+  }
+  sendDiplomaticMessage(code, playerId, input = {}) {
+    const room = this.#requireRoom(code);
+    if (room.status !== "playing") throw new Error("GAME_NOT_STARTED");
+    const sender = room.players.get(String(playerId));
+    if (!sender?.countryId) throw new Error("COUNTRY_NOT_ASSIGNED");
+    const fromCountry = cleanText(input.fromCountry, 80);
+    const toCountry = cleanText(input.toCountry, 80);
+    const threadId = cleanText(input.threadId, 120);
+    const text = String(input.text ?? "").trim().replace(/[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f]/g, "").slice(0, 4000);
+    if (!fromCountry || fromCountry !== sender.countryId) throw new Error("SENDER_COUNTRY_MISMATCH");
+    if (!toCountry || !threadId || !text) throw new Error("INVALID_DIPLOMATIC_MESSAGE");
+    const recipient = [...room.players.values()].find(p => p.countryId === toCountry && p.connected);
+    if (!recipient) return { delivery: "ai", message: null, recipientPlayerId: null };
+    const message = {
+      id: this.tokenFactory(), threadId, fromCountry, toCountry,
+      fromPlayerId: sender.id, toPlayerId: recipient.id,
+      text, createdAt: this.now(),
+    };
+    room.diplomacyMessages ||= [];
+    room.diplomacyMessages.push(message);
+    if (room.diplomacyMessages.length > 2000) room.diplomacyMessages.splice(0, room.diplomacyMessages.length - 2000);
+    room.updatedAt = this.now();
+    return { delivery: "human", message, recipientPlayerId: recipient.id };
+  }
+  diplomacyHistory(code, playerId, threadId) {
+    const room = this.#requireRoom(code);
+    const player = room.players.get(String(playerId));
+    if (!player?.countryId) throw new Error("COUNTRY_NOT_ASSIGNED");
+    const id = cleanText(threadId, 120);
+    return (room.diplomacyMessages || []).filter(message =>
+      message.threadId === id &&
+      (message.fromPlayerId === player.id || message.toPlayerId === player.id)
+    );
   }
   disconnect(code, playerId) {
     const player = this.rooms.get(code)?.players.get(playerId);
