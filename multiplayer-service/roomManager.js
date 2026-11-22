@@ -15,7 +15,7 @@ export class RoomManager {
     let code;
     do { code = this.codeFactory(); } while (this.rooms.has(code));
     const player = this.#newPlayer(name);
-    const room = { code, hostId: player.id, players: new Map([[player.id, player]]), status: "lobby", config: { scenarioId: "", scenarioName: "", gameMode: "standard", settings: {} }, state: null, createdAt: this.now(), updatedAt: this.now() };
+    const room = { code, hostId: player.id, players: new Map([[player.id, player]]), status: "lobby", config: { scenarioId: "", scenarioName: "", gameMode: "standard", settings: {} }, state: null, savedAssignments: {}, createdAt: this.now(), updatedAt: this.now() };
     this.rooms.set(code, room);
     return { room: this.snapshot(room), player: this.#credentials(player) };
   }
@@ -29,6 +29,7 @@ export class RoomManager {
     if (room.status !== "lobby") throw new Error("GAME_ALREADY_STARTED");
     if (room.players.size >= MAX_PLAYERS) throw new Error("ROOM_FULL");
     const player = this.#newPlayer(name);
+    player.countryId = room.savedAssignments?.[player.name] || null;
     room.players.set(player.id, player); room.updatedAt = this.now();
     return { room: this.snapshot(room), player: this.#credentials(player), reconnected: false };
   }
@@ -73,6 +74,7 @@ export class RoomManager {
     room.config = this.#validateState(saved.config);
     room.state = this.#validateState(saved.state ?? null);
     const assignments = new Map(saved.players.map(p => [cleanName(p.name), p.countryId || null]));
+    room.savedAssignments = Object.fromEntries(assignments);
     const used = new Set();
     for (const player of room.players.values()) {
       const countryId = assignments.get(player.name) || null;
