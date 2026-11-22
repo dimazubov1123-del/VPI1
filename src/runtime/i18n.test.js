@@ -8,7 +8,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { SHIPPED_PACK_LANGUAGES, canTranslateTo, chatTextDirection, getLanguageOptions, getUiLanguageOptions, isRtlLanguage } from "./i18n.js";
+import { DEFAULT_LANGUAGE, INITIAL_LANGUAGE, SHIPPED_PACK_LANGUAGES, canTranslateTo, chatTextDirection, getLanguageOptions, getStoredLanguage, getUiLanguageOptions, isRtlLanguage } from "./i18n.js";
+
+
+test("Russian is the first-run interface language; English remains the untranslated source", () => {
+  assert.equal(DEFAULT_LANGUAGE, "en");
+  assert.equal(INITIAL_LANGUAGE, "ru");
+  withStorage({}, () => assert.equal(getStoredLanguage(), "ru"));
+});
 
 test("the interface is offered only in a language a pack or a model on the device covers", () => {
   assert.equal(canTranslateTo("en"), true);
