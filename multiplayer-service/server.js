@@ -17,12 +17,14 @@ const MAX_SCENARIO_BYTES = 100 * 1024 * 1024;
 const sessions = new Map();
 const server = createServer(async (req,res) => {
   const pathname = new URL(req.url || "/", "http://localhost").pathname;
+  const corsHeaders = { "Access-Control-Allow-Origin": req.headers.origin || "*", "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, X-Player-Id, X-Reconnect-Token", "Vary": "Origin" };
+  if (pathname.startsWith("/scenario/") && req.method === "OPTIONS") { res.writeHead(204, corsHeaders); res.end(); return; }
   if (pathname === "/health") { res.writeHead(200,{"content-type":"application/json","cache-control":"no-store"}); res.end(JSON.stringify({ok:true,service:"vpi15-multiplayer"})); return; }
 
   const scenarioMatch = pathname.match(/^\/scenario\/([A-Z0-9]{6})$/);
   if (scenarioMatch && req.method === "GET") {
-    try { const data = await readStoredFile(join(scenarioDir, `${scenarioMatch[1]}.json`)); res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }); res.end(data); }
-    catch (error) { res.writeHead(error.code === "ENOENT" ? 404 : 500, { "content-type": "application/json" }); res.end(JSON.stringify({ error: error.code === "ENOENT" ? "SCENARIO_NOT_UPLOADED" : "SCENARIO_READ_FAILED" })); }
+    try { const data = await readStoredFile(join(scenarioDir, `${scenarioMatch[1]}.json`)); res.writeHead(200, { ...corsHeaders, "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }); res.end(data); }
+    catch (error) { res.writeHead(error.code === "ENOENT" ? 404 : 500, { ...corsHeaders, "content-type": "application/json" }); res.end(JSON.stringify({ error: error.code === "ENOENT" ? "SCENARIO_NOT_UPLOADED" : "SCENARIO_READ_FAILED" })); }
     return;
   }
   if (scenarioMatch && req.method === "POST") {
@@ -39,8 +41,8 @@ const server = createServer(async (req,res) => {
       await writeFile(temp, raw); await rename(temp, target);
       const room = rooms.setScenarioBundle(code, playerId, hash);
       broadcast(code, "room_updated", { room });
-      res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ ok: true, hash, bytes: size }));
-    } catch (error) { const status = error.message === "SCENARIO_TOO_LARGE" ? 413 : error.message === "HOST_ONLY" ? 403 : 400; res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify({ error: error.message || "SCENARIO_UPLOAD_FAILED" })); }
+      res.writeHead(200, { ...corsHeaders, "content-type": "application/json" }); res.end(JSON.stringify({ ok: true, hash, bytes: size }));
+    } catch (error) { const status = error.message === "SCENARIO_TOO_LARGE" ? 413 : error.message === "HOST_ONLY" ? 403 : 400; res.writeHead(status, { ...corsHeaders, "content-type": "application/json" }); res.end(JSON.stringify({ error: error.message || "SCENARIO_UPLOAD_FAILED" })); }
     return;
   }
   if (pathname === "/catalog") {
