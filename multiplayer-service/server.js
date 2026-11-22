@@ -41,6 +41,19 @@ wss.on("connection",ws => {
       if(!session) throw new Error("NOT_IN_ROOM");
       const {code,playerId}=session;
       if(msg.type==="ping") { send(ws,"pong",{at:Date.now()}); return; }
+      if(msg.type==="diplomacy_history") {
+        send(ws,"diplomacy_history",{threadId:String(msg.threadId||""),messages:rooms.diplomacyHistory(code,playerId,msg.threadId)});
+        return;
+      }
+      if(msg.type==="diplomacy_message") {
+        const result=rooms.sendDiplomaticMessage(code,playerId,msg);
+        if(result.delivery==="ai") { send(ws,"diplomacy_delivery",{clientMessageId:msg.clientMessageId||null,delivery:"ai"}); return; }
+        for(const [peer,peerSession] of sessions) {
+          if(peerSession.code===code && peerSession.playerId===result.recipientPlayerId) send(peer,"diplomacy_message",{message:result.message});
+        }
+        send(ws,"diplomacy_delivery",{clientMessageId:msg.clientMessageId||null,delivery:"human",message:result.message});
+        return;
+      }
       if(msg.type==="list_saves") { if(playerId!==rooms.snapshot(code).hostId || !session.ownerKey) throw new Error("HOST_ONLY"); send(ws,"saves",{saves:await saves.list(session.ownerKey)}); return; }
       if(msg.type==="save_game") { if(playerId!==rooms.snapshot(code).hostId || !session.ownerKey) throw new Error("HOST_ONLY"); const saved=await saves.save(session.ownerKey,msg.name,rooms.snapshot(code)); send(ws,"save_created",{save:saved,saves:await saves.list(session.ownerKey)}); return; }
       if(msg.type==="load_save") { if(playerId!==rooms.snapshot(code).hostId || !session.ownerKey) throw new Error("HOST_ONLY"); const saved=await saves.get(session.ownerKey,String(msg.saveId||"")); const restored=rooms.restoreRoom(code,playerId,saved); broadcast(code,"room_updated",{room:restored}); return; }
