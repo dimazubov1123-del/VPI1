@@ -130,13 +130,10 @@ export const getStoredLanguage = () => {
 
 const writeLocalLanguage = (code) => {
   try {
-    if (!code || code === DEFAULT_LANGUAGE) {
-      localStorage.removeItem(STORAGE_KEY);
-    } else {
-      localStorage.setItem(STORAGE_KEY, code);
-    }
+    if (!code) localStorage.removeItem(STORAGE_KEY);
+    else localStorage.setItem(STORAGE_KEY, code);
   } catch {
-    // Private-mode storage failures just leave the game in English.
+    // Private-mode storage failures just leave the first-run language in place.
   }
 };
 
@@ -195,6 +192,26 @@ export const syncLanguageFromServer = async () => {
     const serverLanguage = typeof settings?.language === "string" && settings.language.trim()
       ? settings.language.trim()
       : INITIAL_LANGUAGE;
+
+    // Older builds treated English as the implicit default and removed it from
+    // localStorage. Migrate that old implicit server value to Russian once;
+    // an explicit choice made by a newer build is kept (including English).
+    let localChoice = null;
+    try { localChoice = localStorage.getItem(STORAGE_KEY); } catch { /* blocked */ }
+    if (serverLanguage === DEFAULT_LANGUAGE && !localChoice) {
+      writeLocalLanguage(INITIAL_LANGUAGE);
+      if (getStoredLanguage() !== INITIAL_LANGUAGE) heldLanguage = INITIAL_LANGUAGE;
+      try {
+        await fetch("/api/ui-settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ language: INITIAL_LANGUAGE }),
+        });
+      } catch {
+        // The local choice still applies on this device.
+      }
+      return false;
+    }
 
     if (serverLanguage !== getStoredLanguage()) {
       writeLocalLanguage(serverLanguage);
