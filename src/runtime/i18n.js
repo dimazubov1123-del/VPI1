@@ -7,7 +7,7 @@
 import { translationModelFor } from "./translationModels.js";
 
 const STORAGE_KEY = "ui_language";
-export const DEFAULT_LANGUAGE = "en";
+export const DEFAULT_LANGUAGE = "ru";
 
 // What the advisor and diplomatic chats reply in, so the interface can be read
 // in one language and the chats held in another. Defaults to the UI language —
