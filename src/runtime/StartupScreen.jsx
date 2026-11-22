@@ -8,12 +8,13 @@ import { translateNow } from "./translator.js";
 // Loading-screen artwork. The first is the original; the rest cycle in once the
 // files exist in /public. Missing files are skipped (see the preload check), so
 // the screen never flashes a broken image.
+const publicAsset = (name) => `${import.meta.env.BASE_URL}${name}`;
 const LOADING_IMAGES = [
-  "/loading_screen.jpg",
-  "/loading_screen_2.jpg",
-  "/loading_screen_3.jpg",
-  "/loading_screen_4.jpg",
-  "/loading_screen_5.webp",
+  publicAsset("loading_screen.jpg"),
+  publicAsset("loading_screen_2.jpg"),
+  publicAsset("loading_screen_3.jpg"),
+  publicAsset("loading_screen_4.jpg"),
+  publicAsset("loading_screen_5.webp"),
 ];
 const IMAGE_ROTATE_MS = 4500;
 
@@ -387,7 +388,7 @@ const StartupScreen = ({
       {/* Title row */}
       <div className="ss-top-row">
       <div className="ss-identity">
-      <img className="ss-logo" src="/logo.png" alt="Open Historia" />
+      <img className="ss-logo" src={publicAsset("logo.png")} alt="Open Historia" />
       <div className="ss-title-block">
       <div className="ss-game-name">Open Historia</div>
       <div className="ss-title">
