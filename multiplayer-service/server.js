@@ -33,7 +33,7 @@ const send = (ws,type,payload={}) => { if(ws.readyState===WebSocket.OPEN) ws.sen
 const broadcast = (code,type,payload={}) => { for(const [ws,s] of sessions) if(s.code===code) send(ws,type,payload); };
 const attach = (ws,result,ownerKey=null) => { sessions.set(ws,{code:result.room.code,playerId:result.player.id,ownerKey}); send(ws,"room",{room:result.room,player:result.player,reconnected:Boolean(result.reconnected)}); broadcast(result.room.code,"room_updated",{room:result.room}); };
 wss.on("connection",ws => {
-  ws.on("message",raw => {
+  ws.on("message",async raw => {
     try {
       const msg=JSON.parse(raw.toString());
       if(!msg || typeof msg.type!=="string") throw new Error("INVALID_MESSAGE");
@@ -52,6 +52,9 @@ wss.on("connection",ws => {
       else if(msg.type==="start_game") room=rooms.startGame(code,playerId,msg.state ?? null);
       else if(msg.type==="update_state") room=rooms.updateState(code,playerId,msg.state);
       else throw new Error("UNKNOWN_MESSAGE");
+      if (session.ownerKey && playerId === rooms.snapshot(code).hostId && ["configure_lobby","assign_country","start_game","update_state"].includes(msg.type)) {
+        await saves.save(session.ownerKey,"Автосохранение",room);
+      }
       broadcast(code,"room_updated",{room});
     } catch(error) { send(ws,"error",{code:error.message||"INTERNAL_ERROR"}); }
   });
