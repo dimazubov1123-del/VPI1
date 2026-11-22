@@ -6,7 +6,7 @@ import { Presence } from "./presence.jsx";
 import { LibraryTopBar, TOP_BAR_OFFSET, openLibraryTab, useMainMenuOpen } from "./libraryBar";
 import { ApiSetupPrompt } from "./apiSetupPrompt.jsx";
 import { GameLoadingScreen, LOADING_CEILING_MS, useGameLoading } from "./gameLoadingScreen.jsx";
-import { createGame, exportScenarioBundle, getLibraryState, setOpenGameCountry, useLibraryState } from "../../runtime/library.js";
+import { exportScenarioBundle, getLibraryState, setOpenGameCountry, useLibraryState } from "../../runtime/library.js";
 import { playerAtWar } from "../../runtime/playerAtWar.js";
 import { enterGame, useGameEntered } from "../../runtime/gameEntry.js";
 import { useActiveFeatures, activeWars } from "../../runtime/gameFeatures.js";
@@ -368,7 +368,7 @@ const Main = ({
   const [showWebGLWarning, setShowWebGLWarning] = useState(false);
 
   const [aiSetup, setAiSetup] = useState(readAiSetup);
-  const { activeGame, games, loaded, runtimeScenario, selectedScenarioId, scenarios } = useLibraryState();
+  const { activeGame, games, loaded, runtimeScenario } = useLibraryState();
   // The page starts on the main menu with no game loaded behind it, and this
   // UI is what draws that menu. Until the player opens a game
   // (runtime/gameEntry.js) the library's active game is only the one last
