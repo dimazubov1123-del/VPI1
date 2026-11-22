@@ -439,7 +439,7 @@ const MenuRail = ({ activeTab, onTab, onOpenSettings, onOpenHistory }) => (
       type="button"
     >
       <div style={{ alignItems: "center", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "999px", display: "flex", height: "3.15rem", justifyContent: "center", overflow: "hidden", width: "3.15rem" }}>
-        <img alt="" src="/logo.png" style={{ height: "2.05rem", width: "2.05rem" }} />
+        <img alt="" src={`${import.meta.env.BASE_URL}logo.png`} style={{ height: "2.05rem", width: "2.05rem" }} />
       </div>
       <div style={{ color: "#fff", fontSize: "0.8rem", fontWeight: 800, letterSpacing: "-0.01em", lineHeight: 1.15, textAlign: "center" }}>
         ВПИ №15
