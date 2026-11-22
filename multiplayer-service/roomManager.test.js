@@ -26,3 +26,16 @@ test("keeps AI-owned diplomacy on the AI path and rejects country impersonation"
  assert.equal(manager.sendDiplomaticMessage(host.room.code,host.player.id,{fromCountry:"USSR",toCountry:"FRA",threadId:"t",text:"Bonjour"}).delivery,"ai");
  assert.throws(()=>manager.sendDiplomaticMessage(host.room.code,host.player.id,{fromCountry:"USA",toCountry:"FRA",threadId:"t",text:"spoof"}),/SENDER_COUNTRY_MISMATCH/);
 });
+
+test("requires every player to download and verify the uploaded scenario before starting",()=>{
+ const {manager}=setup();const {host,guest}=readyRoom(manager);const hash="a".repeat(64);
+ assert.equal(manager.isHostToken(host.room.code,host.player.id,host.player.reconnectToken),true);
+ assert.equal(manager.isHostToken(host.room.code,guest.player.id,guest.player.reconnectToken),false);
+ manager.setScenarioBundle(host.room.code,host.player.id,hash);
+ assert.throws(()=>manager.startGame(host.room.code,host.player.id),/SCENARIO_DOWNLOADS_PENDING/);
+ assert.throws(()=>manager.setScenarioReady(host.room.code,guest.player.id,"wrong-hash"),/SCENARIO_HASH_MISMATCH/);
+ manager.setScenarioReady(host.room.code,host.player.id,hash);
+ assert.throws(()=>manager.startGame(host.room.code,host.player.id),/SCENARIO_DOWNLOADS_PENDING/);
+ manager.setScenarioReady(host.room.code,guest.player.id,hash);
+ assert.equal(manager.startGame(host.room.code,host.player.id).status,"playing");
+});
