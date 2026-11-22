@@ -1,5 +1,5 @@
 {
-  "name": "open-historia",
+  "name": "vpi15",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "version": "2.5.5",
@@ -94,7 +94,7 @@
   "main": "electron/bootstrap.cjs",
   "build": {
     "appId": "io.github.arkniem.openhistoria",
-    "productName": "Open Historia",
+    "productName": "Военно-политические игры №15",
     "files": [
       "LICENSE",
       "dist/**",
@@ -146,7 +146,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Open Historia",
+      "shortcutName": "Военно-политические игры №15",
       "artifactName": "Open-Historia-Setup.${ext}"
     },
     "mac": {
