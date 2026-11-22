@@ -2,6 +2,8 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { createHash } from "node:crypto";
+import { mkdir, writeFile, readFile as readStoredFile, rename } from "node:fs/promises";
 import { WebSocketServer, WebSocket } from "ws";
 import { RoomManager } from "./roomManager.js";
 import { SaveStore } from "./saveStore.js";
@@ -10,10 +12,37 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const origins = (process.env.ALLOWED_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean);
 const rooms = new RoomManager();
 const saves = new SaveStore();
+const scenarioDir = process.env.SCENARIO_DIR || "/data/scenarios";
+const MAX_SCENARIO_BYTES = 100 * 1024 * 1024;
 const sessions = new Map();
 const server = createServer(async (req,res) => {
   const pathname = new URL(req.url || "/", "http://localhost").pathname;
   if (pathname === "/health") { res.writeHead(200,{"content-type":"application/json","cache-control":"no-store"}); res.end(JSON.stringify({ok:true,service:"vpi15-multiplayer"})); return; }
+
+  const scenarioMatch = pathname.match(/^\/scenario\/([A-Z0-9]{6})$/);
+  if (scenarioMatch && req.method === "GET") {
+    try { const data = await readStoredFile(join(scenarioDir, `${scenarioMatch[1]}.json`)); res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }); res.end(data); }
+    catch (error) { res.writeHead(error.code === "ENOENT" ? 404 : 500, { "content-type": "application/json" }); res.end(JSON.stringify({ error: error.code === "ENOENT" ? "SCENARIO_NOT_UPLOADED" : "SCENARIO_READ_FAILED" })); }
+    return;
+  }
+  if (scenarioMatch && req.method === "POST") {
+    try {
+      const code = scenarioMatch[1], playerId = String(req.headers["x-player-id"] || ""), token = String(req.headers["x-reconnect-token"] || "");
+      if (!rooms.isHostToken(code, playerId, token)) throw new Error("HOST_ONLY");
+      const chunks = []; let size = 0;
+      for await (const chunk of req) { size += chunk.length; if (size > MAX_SCENARIO_BYTES) throw new Error("SCENARIO_TOO_LARGE"); chunks.push(chunk); }
+      const raw = Buffer.concat(chunks), bundle = JSON.parse(raw.toString("utf8"));
+      if (!bundle || typeof bundle !== "object" || Array.isArray(bundle)) throw new Error("INVALID_SCENARIO_BUNDLE");
+      const hash = createHash("sha256").update(raw).digest("hex");
+      await mkdir(scenarioDir, { recursive: true });
+      const target = join(scenarioDir, `${code}.json`), temp = target + ".tmp";
+      await writeFile(temp, raw); await rename(temp, target);
+      const room = rooms.setScenarioBundle(code, playerId, hash);
+      broadcast(code, "room_updated", { room });
+      res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ ok: true, hash, bytes: size }));
+    } catch (error) { const status = error.message === "SCENARIO_TOO_LARGE" ? 413 : error.message === "HOST_ONLY" ? 403 : 400; res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify({ error: error.message || "SCENARIO_UPLOAD_FAILED" })); }
+    return;
+  }
   if (pathname === "/catalog") {
     try { const catalog = await readFile(join(HERE,"catalog.json"),"utf8"); res.writeHead(200,{"content-type":"application/json; charset=utf-8","cache-control":"no-store"}); res.end(catalog); }
     catch { res.writeHead(500,{"content-type":"application/json"}); res.end(JSON.stringify({error:"CATALOG_UNAVAILABLE"})); }
@@ -41,6 +70,7 @@ wss.on("connection",ws => {
       if(!session) throw new Error("NOT_IN_ROOM");
       const {code,playerId}=session;
       if(msg.type==="ping") { send(ws,"pong",{at:Date.now()}); return; }
+      if(msg.type==="scenario_ready") { const room=rooms.setScenarioReady(code,playerId,msg.hash); broadcast(code,"room_updated",{room}); return; }
       if(msg.type==="diplomacy_history") {
         send(ws,"diplomacy_history",{threadId:String(msg.threadId||""),messages:rooms.diplomacyHistory(code,playerId,msg.threadId)});
         return;
