@@ -136,9 +136,17 @@ test("a later change in the same tab still reloads", async () => {
   assert.equal(local.getItem("ui_language"), "es");
 });
 
-test("back to English removes the stored copy and reloads", async () => {
+test("an old implicit English server default migrates to Russian", async () => {
+  const local = makeStorage();
+  const i18n = await boot({ server: "en", local, session: makeStorage() });
+  assert.equal(await i18n.syncLanguageFromServer(), false);
+  assert.equal(i18n.getStoredLanguage(), "ru");
+  assert.equal(local.getItem("ui_language"), "ru");
+});
+
+test("an explicit English choice is retained and stored", async () => {
   const local = makeStorage({ initial: { ui_language: "fr" } });
   const i18n = await boot({ server: "en", local, session: makeStorage() });
   assert.equal(await i18n.syncLanguageFromServer(), true);
-  assert.equal(local.getItem("ui_language"), null);
+  assert.equal(local.getItem("ui_language"), "en");
 });
