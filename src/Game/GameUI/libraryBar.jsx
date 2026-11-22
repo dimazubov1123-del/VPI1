@@ -435,14 +435,14 @@ const MenuRail = ({ activeTab, onTab, onOpenSettings, onOpenHistory }) => (
       className="oh-tap"
       onClick={onOpenHistory}
       style={{ alignItems: "center", background: "none", border: "none", color: "inherit", cursor: "pointer", display: "flex", flexDirection: "column", flexShrink: 0, gap: "0.45rem", padding: 0 }}
-      title="Update history: every update to Open Historia"
+      title="История обновлений игры ВПИ №15"
       type="button"
     >
       <div style={{ alignItems: "center", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "999px", display: "flex", height: "3.15rem", justifyContent: "center", overflow: "hidden", width: "3.15rem" }}>
         <img alt="" src="/logo.png" style={{ height: "2.05rem", width: "2.05rem" }} />
       </div>
       <div style={{ color: "#fff", fontSize: "0.8rem", fontWeight: 800, letterSpacing: "-0.01em", lineHeight: 1.15, textAlign: "center" }}>
-        Open Historia
+        ВПИ №15
       </div>
     </button>
     <div style={{ flex: 1, minHeight: "0.6rem" }} />
