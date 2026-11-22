@@ -63,7 +63,7 @@ export class RoomManager {
     if (room.status !== "lobby") throw new Error("GAME_ALREADY_STARTED");
     if (!room.config.scenarioId || !room.config.scenarioName) throw new Error("SCENARIO_REQUIRED");
     if ([...room.players.values()].some(p => !p.countryId)) throw new Error("COUNTRIES_NOT_ASSIGNED");
-    room.status = "playing"; room.state = this.#validateState(state); room.updatedAt = this.now();
+    room.status = "playing"; if (state != null) room.state = this.#validateState(state); room.updatedAt = this.now();
     return this.snapshot(room);
   }
   restoreRoom(code, playerId, saved) {
@@ -73,7 +73,8 @@ export class RoomManager {
     if (!saved || !saved.config || !Array.isArray(saved.players)) throw new Error("INVALID_SAVE");
     room.config = this.#validateState(saved.config);
     room.state = this.#validateState(saved.state ?? null);
-    const assignments = new Map(saved.players.map(p => [cleanName(p.name), p.countryId || null]));
+    const assignments = new Map(Object.entries(saved.savedAssignments || {}));
+    for (const p of saved.players) if (p.countryId) assignments.set(cleanName(p.name), p.countryId);
     room.savedAssignments = Object.fromEntries(assignments);
     const used = new Set();
     for (const player of room.players.values()) {
@@ -82,7 +83,7 @@ export class RoomManager {
       if (countryId) used.add(countryId);
       player.countryId = countryId;
     }
-    room.status = saved.status === "playing" ? "playing" : "lobby";
+    room.status = "lobby";
     room.updatedAt = this.now();
     return this.snapshot(room);
   }
@@ -110,7 +111,7 @@ export class RoomManager {
   }
   snapshot(value) {
     const room = typeof value === "string" ? this.#requireRoom(value) : value;
-    return { code: room.code, hostId: room.hostId, status: room.status, config: room.config, players: [...room.players.values()].map(({id,name,countryId,connected}) => ({id,name,countryId,connected})), state: room.state, createdAt: room.createdAt, updatedAt: room.updatedAt };
+    return { code: room.code, hostId: room.hostId, status: room.status, config: room.config, players: [...room.players.values()].map(({id,name,countryId,connected}) => ({id,name,countryId,connected})), state: room.state, savedAssignments: room.savedAssignments || {}, createdAt: room.createdAt, updatedAt: room.updatedAt };
   }
   #newPlayer(name) { return { id: randomBytes(12).toString("hex"), token: this.tokenFactory(), name: cleanName(name), countryId: null, connected: true, disconnectedAt: null }; }
   #credentials(player) { return { id: player.id, reconnectToken: player.token }; }
