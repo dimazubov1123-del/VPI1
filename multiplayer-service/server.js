@@ -12,6 +12,11 @@ const sessions = new Map();
 const server = createServer(async (req,res) => {
   const pathname = new URL(req.url || "/", "http://localhost").pathname;
   if (pathname === "/health") { res.writeHead(200,{"content-type":"application/json","cache-control":"no-store"}); res.end(JSON.stringify({ok:true,service:"vpi15-multiplayer"})); return; }
+  if (pathname === "/catalog") {
+    try { const catalog = await readFile(join(HERE,"catalog.json"),"utf8"); res.writeHead(200,{"content-type":"application/json; charset=utf-8","cache-control":"no-store"}); res.end(catalog); }
+    catch { res.writeHead(500,{"content-type":"application/json"}); res.end(JSON.stringify({error:"CATALOG_UNAVAILABLE"})); }
+    return;
+  }
   if (pathname === "/" || pathname === "/lobby" || pathname === "/lobby/") {
     try { const html = await readFile(join(HERE,"lobby.html")); res.writeHead(200,{"content-type":"text/html; charset=utf-8","cache-control":"no-store"}); res.end(html); }
     catch { res.writeHead(500); res.end("Lobby unavailable"); }
