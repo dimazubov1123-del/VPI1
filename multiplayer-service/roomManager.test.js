@@ -1,0 +1,9 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { RoomManager } from "./roomManager.js";
+function setup(){let now=1000,code=0,token=0;return {manager:new RoomManager({now:()=>now,codeFactory:()=>`ROOM${++code}`,tokenFactory:()=>`token-${++token}`,disconnectGraceMs:100}),advance:ms=>{now+=ms;}};}
+test("creates a room and joins a second player",()=>{const {manager}=setup();const a=manager.createRoom("Хозяин");const b=manager.joinRoom(a.room.code,"Гость");assert.equal(b.room.players.length,2);assert.equal(b.room.hostId,a.player.id);});
+test("only host can start and update shared state",()=>{const {manager}=setup();const a=manager.createRoom("Хозяин");const b=manager.joinRoom(a.room.code,"Гость");assert.throws(()=>manager.startGame(a.room.code,b.player.id),/HOST_ONLY/);assert.equal(manager.startGame(a.room.code,a.player.id,{turn:1}).status,"playing");assert.deepEqual(manager.updateState(a.room.code,a.player.id,{turn:2}).state,{turn:2});assert.throws(()=>manager.updateState(a.room.code,b.player.id,{}),/HOST_ONLY/);});
+test("reconnects with token",()=>{const {manager}=setup();const a=manager.createRoom("Игрок");manager.disconnect(a.room.code,a.player.id);const b=manager.joinRoom(a.room.code,"Снова",a.player.reconnectToken);assert.equal(b.reconnected,true);assert.equal(b.player.id,a.player.id);});
+test("expires disconnected host and transfers host",()=>{const {manager,advance}=setup();const a=manager.createRoom("Хозяин");const b=manager.joinRoom(a.room.code,"Гость");manager.disconnect(a.room.code,a.player.id);advance(101);manager.removeExpiredPlayers();assert.equal(manager.snapshot(a.room.code).hostId,b.player.id);});
+test("rejects oversized game state",()=>{const {manager}=setup();const a=manager.createRoom("Хозяин");assert.throws(()=>manager.startGame(a.room.code,a.player.id,"x".repeat(300000)),/STATE_TOO_LARGE/);});
