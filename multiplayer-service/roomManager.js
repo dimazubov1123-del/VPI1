@@ -104,7 +104,7 @@ export class RoomManager {
     const fromCountry = cleanText(input.fromCountry, 80);
     const toCountry = cleanText(input.toCountry, 80);
     const threadId = cleanText(input.threadId, 120);
-    const text = String(input.text ?? "").trim().replace(/[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f]/g, "").slice(0, 4000);
+    const text = String(input.text ?? "").trim().replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "").slice(0, 4000);
     if (!fromCountry || fromCountry !== sender.countryId) throw new Error("SENDER_COUNTRY_MISMATCH");
     if (!toCountry || !threadId || !text) throw new Error("INVALID_DIPLOMATIC_MESSAGE");
     const recipient = [...room.players.values()].find(p => p.countryId === toCountry && p.connected);
