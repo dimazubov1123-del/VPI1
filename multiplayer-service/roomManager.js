@@ -3,7 +3,8 @@ const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const MAX_PLAYERS = 8;
 const MAX_STATE_BYTES = 256 * 1024;
 const makeCode = () => Array.from(randomBytes(6), b => ALPHABET[b % ALPHABET.length]).join("");
-const cleanName = value => String(value ?? "").trim().replace(/[<>\u0000-\u001f]/g, "").slice(0, 24) || "Игрок";
+const cleanName = value => String(value ?? "").trim().replace(/[<>\\u0000-\\u001f]/g, "").slice(0, 24) || "Игрок";
+const cleanText = (value, max = 100) => String(value ?? "").trim().replace(/[<>\\u0000-\\u001f]/g, "").slice(0, max);
 
 export class RoomManager {
   constructor({ now = Date.now, codeFactory = makeCode, tokenFactory = () => randomBytes(24).toString("base64url"), disconnectGraceMs = 90000 } = {}) {
@@ -14,7 +15,7 @@ export class RoomManager {
     let code;
     do { code = this.codeFactory(); } while (this.rooms.has(code));
     const player = this.#newPlayer(name);
-    const room = { code, hostId: player.id, players: new Map([[player.id, player]]), status: "lobby", state: null, createdAt: this.now(), updatedAt: this.now() };
+    const room = { code, hostId: player.id, players: new Map([[player.id, player]]), status: "lobby", config: { scenarioId: "", scenarioName: "", gameMode: "standard", settings: {} }, state: null, createdAt: this.now(), updatedAt: this.now() };
     this.rooms.set(code, room);
     return { room: this.snapshot(room), player: this.#credentials(player) };
   }
@@ -31,25 +32,42 @@ export class RoomManager {
     room.players.set(player.id, player); room.updatedAt = this.now();
     return { room: this.snapshot(room), player: this.#credentials(player), reconnected: false };
   }
-  setCountry(code, playerId, countryId) {
+  configureLobby(code, playerId, config = {}) {
     const room = this.#requireRoom(code);
+    this.#assertHost(room, playerId);
     if (room.status !== "lobby") throw new Error("GAME_ALREADY_STARTED");
-    const player = room.players.get(playerId);
-    if (!player) throw new Error("PLAYER_NOT_FOUND");
-    player.countryId = String(countryId ?? "").trim().slice(0, 80) || null;
+    const scenarioId = cleanText(config.scenarioId, 100);
+    const scenarioName = cleanText(config.scenarioName, 120);
+    const gameMode = cleanText(config.gameMode || "standard", 40) || "standard";
+    const settings = config.settings && typeof config.settings === "object" && !Array.isArray(config.settings) ? this.#validateState(config.settings) : {};
+    room.config = { scenarioId, scenarioName, gameMode, settings };
+    room.updatedAt = this.now();
+    return this.snapshot(room);
+  }
+  assignCountry(code, hostId, targetPlayerId, countryId) {
+    const room = this.#requireRoom(code);
+    this.#assertHost(room, hostId);
+    if (room.status !== "lobby") throw new Error("GAME_ALREADY_STARTED");
+    const target = room.players.get(String(targetPlayerId));
+    if (!target) throw new Error("PLAYER_NOT_FOUND");
+    const nextCountry = cleanText(countryId, 80);
+    if (nextCountry && [...room.players.values()].some(p => p.id !== target.id && p.countryId === nextCountry)) throw new Error("COUNTRY_ALREADY_ASSIGNED");
+    target.countryId = nextCountry || null;
     room.updatedAt = this.now();
     return this.snapshot(room);
   }
   startGame(code, playerId, state = null) {
     const room = this.#requireRoom(code);
-    if (room.hostId !== playerId) throw new Error("HOST_ONLY");
+    this.#assertHost(room, playerId);
     if (room.status !== "lobby") throw new Error("GAME_ALREADY_STARTED");
+    if (!room.config.scenarioId || !room.config.scenarioName) throw new Error("SCENARIO_REQUIRED");
+    if ([...room.players.values()].some(p => !p.countryId)) throw new Error("COUNTRIES_NOT_ASSIGNED");
     room.status = "playing"; room.state = this.#validateState(state); room.updatedAt = this.now();
     return this.snapshot(room);
   }
   updateState(code, playerId, state) {
     const room = this.#requireRoom(code);
-    if (room.hostId !== playerId) throw new Error("HOST_ONLY");
+    this.#assertHost(room, playerId);
     if (room.status !== "playing") throw new Error("GAME_NOT_STARTED");
     room.state = this.#validateState(state); room.updatedAt = this.now();
     return this.snapshot(room);
@@ -71,10 +89,11 @@ export class RoomManager {
   }
   snapshot(value) {
     const room = typeof value === "string" ? this.#requireRoom(value) : value;
-    return { code: room.code, hostId: room.hostId, status: room.status, players: [...room.players.values()].map(({id,name,countryId,connected}) => ({id,name,countryId,connected})), state: room.state, createdAt: room.createdAt, updatedAt: room.updatedAt };
+    return { code: room.code, hostId: room.hostId, status: room.status, config: room.config, players: [...room.players.values()].map(({id,name,countryId,connected}) => ({id,name,countryId,connected})), state: room.state, createdAt: room.createdAt, updatedAt: room.updatedAt };
   }
   #newPlayer(name) { return { id: randomBytes(12).toString("hex"), token: this.tokenFactory(), name: cleanName(name), countryId: null, connected: true, disconnectedAt: null }; }
   #credentials(player) { return { id: player.id, reconnectToken: player.token }; }
+  #assertHost(room, playerId) { if (room.hostId !== playerId) throw new Error("HOST_ONLY"); }
   #requireRoom(code) { const room = this.rooms.get(String(code ?? "").toUpperCase()); if (!room) throw new Error("ROOM_NOT_FOUND"); return room; }
   #validateState(state) {
     if (state == null) return null;
