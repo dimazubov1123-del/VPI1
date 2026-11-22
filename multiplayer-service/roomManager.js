@@ -65,6 +65,25 @@ export class RoomManager {
     room.status = "playing"; room.state = this.#validateState(state); room.updatedAt = this.now();
     return this.snapshot(room);
   }
+  restoreRoom(code, playerId, saved) {
+    const room = this.#requireRoom(code);
+    this.#assertHost(room, playerId);
+    if (room.status !== "lobby") throw new Error("GAME_ALREADY_STARTED");
+    if (!saved || !saved.config || !Array.isArray(saved.players)) throw new Error("INVALID_SAVE");
+    room.config = this.#validateState(saved.config);
+    room.state = this.#validateState(saved.state ?? null);
+    const assignments = new Map(saved.players.map(p => [cleanName(p.name), p.countryId || null]));
+    const used = new Set();
+    for (const player of room.players.values()) {
+      const countryId = assignments.get(player.name) || null;
+      if (countryId && used.has(countryId)) throw new Error("INVALID_SAVE");
+      if (countryId) used.add(countryId);
+      player.countryId = countryId;
+    }
+    room.status = saved.status === "playing" ? "playing" : "lobby";
+    room.updatedAt = this.now();
+    return this.snapshot(room);
+  }
   updateState(code, playerId, state) {
     const room = this.#requireRoom(code);
     this.#assertHost(room, playerId);
