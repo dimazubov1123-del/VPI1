@@ -4,10 +4,12 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
 import { RoomManager } from "./roomManager.js";
+import { SaveStore } from "./saveStore.js";
 const PORT = Number(process.env.PORT || 3001);
 const HERE = dirname(fileURLToPath(import.meta.url));
 const origins = (process.env.ALLOWED_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean);
 const rooms = new RoomManager();
+const saves = new SaveStore();
 const sessions = new Map();
 const server = createServer(async (req,res) => {
   const pathname = new URL(req.url || "/", "http://localhost").pathname;
@@ -27,18 +29,21 @@ const server = createServer(async (req,res) => {
 const wss = new WebSocketServer({server,path:"/ws",maxPayload:300*1024,verifyClient:({origin},done) => done(origins.length===0 || !origin || origins.includes(origin),403,"Origin not allowed")});
 const send = (ws,type,payload={}) => { if(ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify({type,...payload})); };
 const broadcast = (code,type,payload={}) => { for(const [ws,s] of sessions) if(s.code===code) send(ws,type,payload); };
-const attach = (ws,result) => { sessions.set(ws,{code:result.room.code,playerId:result.player.id}); send(ws,"room",{room:result.room,player:result.player,reconnected:Boolean(result.reconnected)}); broadcast(result.room.code,"room_updated",{room:result.room}); };
+const attach = (ws,result,ownerKey=null) => { sessions.set(ws,{code:result.room.code,playerId:result.player.id,ownerKey}); send(ws,"room",{room:result.room,player:result.player,reconnected:Boolean(result.reconnected)}); broadcast(result.room.code,"room_updated",{room:result.room}); };
 wss.on("connection",ws => {
   ws.on("message",raw => {
     try {
       const msg=JSON.parse(raw.toString());
       if(!msg || typeof msg.type!=="string") throw new Error("INVALID_MESSAGE");
       const session=sessions.get(ws);
-      if(msg.type==="create_room") { if(session) throw new Error("ALREADY_IN_ROOM"); attach(ws,rooms.createRoom(msg.name)); return; }
-      if(msg.type==="join_room") { if(session) throw new Error("ALREADY_IN_ROOM"); attach(ws,rooms.joinRoom(msg.code,msg.name,msg.reconnectToken)); return; }
+      if(msg.type==="create_room") { if(session) throw new Error("ALREADY_IN_ROOM"); const ownerKey=String(msg.ownerKey||"").slice(0,100); if(ownerKey.length<20) throw new Error("HOST_KEY_REQUIRED"); attach(ws,rooms.createRoom(msg.name),ownerKey); return; }
+      if(msg.type==="join_room") { if(session) throw new Error("ALREADY_IN_ROOM"); attach(ws,rooms.joinRoom(msg.code,msg.name,msg.reconnectToken),String(msg.ownerKey||"").slice(0,100)||null); return; }
       if(!session) throw new Error("NOT_IN_ROOM");
       const {code,playerId}=session;
       if(msg.type==="ping") { send(ws,"pong",{at:Date.now()}); return; }
+      if(msg.type==="list_saves") { if(playerId!==rooms.snapshot(code).hostId || !session.ownerKey) throw new Error("HOST_ONLY"); send(ws,"saves",{saves:await saves.list(session.ownerKey)}); return; }
+      if(msg.type==="save_game") { if(playerId!==rooms.snapshot(code).hostId || !session.ownerKey) throw new Error("HOST_ONLY"); const saved=await saves.save(session.ownerKey,msg.name,rooms.snapshot(code)); send(ws,"save_created",{save:saved,saves:await saves.list(session.ownerKey)}); return; }
+      if(msg.type==="load_save") { if(playerId!==rooms.snapshot(code).hostId || !session.ownerKey) throw new Error("HOST_ONLY"); const saved=await saves.get(session.ownerKey,String(msg.saveId||"")); const restored=rooms.restoreRoom(code,playerId,saved); broadcast(code,"room_updated",{room:restored}); return; }
       let room;
       if(msg.type==="configure_lobby") room=rooms.configureLobby(code,playerId,msg.config);
       else if(msg.type==="assign_country") room=rooms.assignCountry(code,playerId,msg.playerId,msg.countryId);
