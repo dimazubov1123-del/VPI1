@@ -6,7 +6,7 @@ import { Presence } from "./presence.jsx";
 import { LibraryTopBar, TOP_BAR_OFFSET, openLibraryTab, useMainMenuOpen } from "./libraryBar";
 import { ApiSetupPrompt } from "./apiSetupPrompt.jsx";
 import { GameLoadingScreen, LOADING_CEILING_MS, useGameLoading } from "./gameLoadingScreen.jsx";
-import { exportScenarioBundle, getLibraryState, setOpenGameCountry, useLibraryState } from "../../runtime/library.js";
+import { createGame, exportScenarioBundle, getLibraryState, importScenarioBundle, setOpenGameCountry, useLibraryState } from "../../runtime/library.js";
 import { playerAtWar } from "../../runtime/playerAtWar.js";
 import { enterGame, useGameEntered } from "../../runtime/gameEntry.js";
 import { useActiveFeatures, activeWars } from "../../runtime/gameFeatures.js";
@@ -375,6 +375,66 @@ const Main = ({
   // played: none of the game's own controls is mounted, and nothing here reads
   // it, reports it or runs anything for it.
   const gameEntered = useGameEntered();
+
+  // A lobby returns every ready player here with the same scenario bundle
+  // and their assigned country. Import it through the regular library API,
+  // then use the exact same createGame path as single-player's Play button.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const room = params.get("mpRoom");
+    const hash = params.get("mpHash");
+    const country = params.get("mpCountry");
+    const player = params.get("mpPlayer");
+    const token = params.get("mpToken");
+    if (!room || !hash || !country || !player || !token) return;
+
+    const cleanUrl = () => {
+      const url = new URL(window.location.href);
+      ["mpRoom", "mpHash", "mpCountry", "mpPlayer", "mpToken"].forEach((key) => url.searchParams.delete(key));
+      window.history.replaceState({}, "", url.toString());
+    };
+    cleanUrl();
+    const launchKey = `vpi15-mp-launch:${room}:${player}`;
+    if (sessionStorage.getItem(launchKey) === "done" || sessionStorage.getItem(launchKey) === "running") return;
+    sessionStorage.setItem(launchKey, "running");
+    setMultiplayerBusy(true);
+    setMultiplayerError("");
+
+    (async () => {
+      try {
+        const response = await fetch(`https://vpi15-multiplayer-production.up.railway.app/scenario/${encodeURIComponent(room)}`, { cache: "no-store" });
+        if (!response.ok) throw new Error(`Не удалось скачать сценарий из комнаты (HTTP ${response.status}).`);
+        const raw = await response.text();
+        const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw));
+        const actualHash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+        if (actualHash !== hash) throw new Error("Контрольная сумма сценария не совпала. Попросите хоста повторно загрузить сценарий.");
+        const bundle = JSON.parse(raw);
+        const imported = await importScenarioBundle(bundle);
+        const library = getLibraryState();
+        const importedId = imported?.scenario?.id || imported?.scenarioId || imported?.id;
+        const scenarioName = bundle?.scenario?.name || "Сетевая кампания";
+        const scenario = library.scenarios.find((item) => item.id === importedId)
+          || library.scenarios.find((item) => item.name === scenarioName);
+        if (!scenario?.id) throw new Error("Сценарий импортирован, но игра не смогла найти его в библиотеке.");
+        localStorage.setItem("vpi15-mp-session", JSON.stringify({
+          room, hash, country, player, token, role: "player", connectedAt: Date.now(),
+        }));
+        await createGame({
+          name: `${scenario.name} — сетевая партия`,
+          scenarioId: scenario.id,
+          gamePatch: { country },
+          setActive: true,
+        });
+        sessionStorage.setItem(launchKey, "done");
+      } catch (error) {
+        sessionStorage.removeItem(launchKey);
+        setMultiplayerError(error?.message || "Не удалось запустить сетевую кампанию.");
+      } finally {
+        setMultiplayerBusy(false);
+      }
+    })();
+  }, []);
 
   const [multiplayerBusy, setMultiplayerBusy] = useState(false);
   const [multiplayerError, setMultiplayerError] = useState("");
