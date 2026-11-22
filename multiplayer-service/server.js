@@ -10,8 +10,9 @@ const origins = (process.env.ALLOWED_ORIGINS || "").split(",").map(s => s.trim()
 const rooms = new RoomManager();
 const sessions = new Map();
 const server = createServer(async (req,res) => {
-  if (req.url === "/" || req.url === "/health") { res.writeHead(200,{"content-type":"application/json","cache-control":"no-store"}); res.end(JSON.stringify({ok:true,service:"vpi15-multiplayer"})); return; }
-  if (req.url === "/lobby" || req.url === "/lobby/") {
+  const pathname = new URL(req.url || "/", "http://localhost").pathname;
+  if (pathname === "/health") { res.writeHead(200,{"content-type":"application/json","cache-control":"no-store"}); res.end(JSON.stringify({ok:true,service:"vpi15-multiplayer"})); return; }
+  if (pathname === "/" || pathname === "/lobby" || pathname === "/lobby/") {
     try { const html = await readFile(join(HERE,"lobby.html")); res.writeHead(200,{"content-type":"text/html; charset=utf-8","cache-control":"no-store"}); res.end(html); }
     catch { res.writeHead(500); res.end("Lobby unavailable"); }
     return;
