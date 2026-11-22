@@ -19,6 +19,7 @@ const CHAT_STORAGE_KEY = "ai_chat_language";
 // model covers: recognizable English name first, endonym after. A full ISO
 // dump read like random letters here.
 export const LANGUAGES = [
+  { code: "ru", name: "Russian", native: "Русский" },
   { code: "en", name: "English", native: "English" },
   { code: "zh", name: "Chinese (Mandarin)", native: "中文" },
   { code: "hi", name: "Hindi", native: "हिन्दी" },
@@ -27,7 +28,6 @@ export const LANGUAGES = [
   { code: "ar", name: "Arabic", native: "العربية" },
   { code: "bn", name: "Bengali", native: "বাংলা" },
   { code: "pt", name: "Portuguese", native: "Português" },
-  { code: "ru", name: "Russian", native: "Русский" },
   { code: "ur", name: "Urdu", native: "اردو" },
   { code: "id", name: "Indonesian", native: "Bahasa Indonesia" },
   { code: "de", name: "German", native: "Deutsch" },
