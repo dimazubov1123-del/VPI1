@@ -54,6 +54,8 @@ export class RoomManager {
     const nextCountry = cleanText(countryId, 80);
     if (nextCountry && [...room.players.values()].some(p => p.id !== target.id && p.countryId === nextCountry)) throw new Error("COUNTRY_ALREADY_ASSIGNED");
     target.countryId = nextCountry || null;
+    room.savedAssignments ||= {};
+    room.savedAssignments[target.name] = nextCountry || null;
     room.updatedAt = this.now();
     return this.snapshot(room);
   }
