@@ -12,3 +12,17 @@ test("expires disconnected host and transfers host",()=>{const {manager,advance}
 test("rejects oversized game state",()=>{const {manager}=setup();const {host}=readyRoom(manager);manager.startGame(host.room.code,host.player.id);assert.throws(()=>manager.updateState(host.room.code,host.player.id,"x".repeat(300000)),/STATE_TOO_LARGE/);});
 
 test("restores a saved room while preserving assignments for players who rejoin",()=>{const {manager}=setup();const a=manager.createRoom("Хозяин");manager.configureLobby(a.room.code,a.player.id,{scenarioId:"default",scenarioName:"Modern Day"});manager.assignCountry(a.room.code,a.player.id,a.player.id,"USA");const saved={config:{scenarioId:"default",scenarioName:"Modern Day",gameMode:"standard",settings:{}},state:{turn:4},status:"playing",players:[{name:"Хозяин",countryId:"USA"},{name:"Гость",countryId:"RUS"}],savedAssignments:{Хозяин:"USA",Гость:"RUS"}};const restored=manager.restoreRoom(a.room.code,a.player.id,saved);assert.equal(restored.status,"lobby");assert.deepEqual(restored.state,{turn:4});const guest=manager.joinRoom(a.room.code,"Гость");assert.equal(guest.room.players.find(p=>p.id===guest.player.id).countryId,"RUS");assert.equal(manager.startGame(a.room.code,a.player.id).state.turn,4);});
+
+test("routes diplomacy only to the player who owns the destination country",()=>{
+ const {manager}=setup();const {host,guest}=readyRoom(manager);manager.startGame(host.room.code,host.player.id);
+ const delivered=manager.sendDiplomaticMessage(host.room.code,host.player.id,{fromCountry:"USSR",toCountry:"USA",threadId:"thread-1",text:"Предлагаю договор"});
+ assert.equal(delivered.delivery,"human");assert.equal(delivered.recipientPlayerId,guest.player.id);assert.equal(delivered.message.text,"Предлагаю договор");
+ assert.deepEqual(manager.diplomacyHistory(host.room.code,guest.player.id,"thread-1"),[delivered.message]);
+ assert.deepEqual(manager.diplomacyHistory(host.room.code,host.player.id,"thread-1"),[delivered.message]);
+ assert.deepEqual(manager.diplomacyHistory(host.room.code,guest.player.id,"other-thread"),[]);
+});
+test("keeps AI-owned diplomacy on the AI path and rejects country impersonation",()=>{
+ const {manager}=setup();const {host}=readyRoom(manager);manager.startGame(host.room.code,host.player.id);
+ assert.equal(manager.sendDiplomaticMessage(host.room.code,host.player.id,{fromCountry:"USSR",toCountry:"FRA",threadId:"t",text:"Bonjour"}).delivery,"ai");
+ assert.throws(()=>manager.sendDiplomaticMessage(host.room.code,host.player.id,{fromCountry:"USA",toCountry:"FRA",threadId:"t",text:"spoof"}),/SENDER_COUNTRY_MISMATCH/);
+});
