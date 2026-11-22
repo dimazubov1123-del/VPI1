@@ -28,7 +28,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Build browser version
-        run: npm run build:web -- --base=/VPI1/
+        run: node scripts/seed-web-defaults.mjs && npx vite build --mode web --base=/VPI1/ --outDir dist-web --emptyOutDir && node scripts/stage-map-assets.mjs dist-web
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
         with:
