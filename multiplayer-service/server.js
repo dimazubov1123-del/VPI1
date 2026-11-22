@@ -5,12 +5,10 @@ import { dirname, join } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
 import { RoomManager } from "./roomManager.js";
 import { SaveStore } from "./saveStore.js";
-import { SaveStore } from "./saveStore.js";
 const PORT = Number(process.env.PORT || 3001);
 const HERE = dirname(fileURLToPath(import.meta.url));
 const origins = (process.env.ALLOWED_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean);
 const rooms = new RoomManager();
-const saves = new SaveStore();
 const saves = new SaveStore();
 const sessions = new Map();
 const server = createServer(async (req,res) => {
