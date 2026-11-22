@@ -6,7 +6,7 @@ import { Presence } from "./presence.jsx";
 import { LibraryTopBar, TOP_BAR_OFFSET, openLibraryTab, useMainMenuOpen } from "./libraryBar";
 import { ApiSetupPrompt } from "./apiSetupPrompt.jsx";
 import { GameLoadingScreen, LOADING_CEILING_MS, useGameLoading } from "./gameLoadingScreen.jsx";
-import { setOpenGameCountry, useLibraryState } from "../../runtime/library.js";
+import { createGame, exportScenarioBundle, getLibraryState, setOpenGameCountry, useLibraryState } from "../../runtime/library.js";
 import { playerAtWar } from "../../runtime/playerAtWar.js";
 import { enterGame, useGameEntered } from "../../runtime/gameEntry.js";
 import { useActiveFeatures, activeWars } from "../../runtime/gameFeatures.js";
@@ -368,13 +368,83 @@ const Main = ({
   const [showWebGLWarning, setShowWebGLWarning] = useState(false);
 
   const [aiSetup, setAiSetup] = useState(readAiSetup);
-  const { activeGame, games, loaded, runtimeScenario } = useLibraryState();
+  const { activeGame, games, loaded, runtimeScenario, selectedScenarioId, scenarios } = useLibraryState();
   // The page starts on the main menu with no game loaded behind it, and this
   // UI is what draws that menu. Until the player opens a game
   // (runtime/gameEntry.js) the library's active game is only the one last
   // played: none of the game's own controls is mounted, and nothing here reads
   // it, reports it or runs anything for it.
   const gameEntered = useGameEntered();
+
+  const [multiplayerBusy, setMultiplayerBusy] = useState(false);
+  const [multiplayerError, setMultiplayerError] = useState("");
+  const createMultiplayerRoom = async () => {
+    if (multiplayerBusy) return;
+    setMultiplayerBusy(true); setMultiplayerError("");
+    let socket;
+    try {
+      const state = getLibraryState();
+      const scenarioId = state.selectedScenarioId || state.runtimeScenario?.id || state.scenarios?.[0]?.id;
+      if (!scenarioId) throw new Error("Сначала выберите сценарий во вкладке «Сценарии» библиотеки.");
+      const bundle = await exportScenarioBundle(scenarioId);
+      const raw = JSON.stringify(bundle);
+      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw));
+      const hash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+      const scenarioName = bundle?.scenario?.name || state.scenarios?.find((item) => item.id === scenarioId)?.name || "Сценарий";
+      const scenarioKey = `custom-${hash.slice(0, 16)}`;
+      const ownerKey = localStorage.getItem("vpi15-mp-host-key") || crypto.randomUUID() + crypto.randomUUID();
+      localStorage.setItem("vpi15-mp-host-key", ownerKey);
+      await new Promise((resolve, reject) => {
+        socket = new WebSocket("wss://vpi15-multiplayer-production.up.railway.app/ws");
+        let roomCreated = false, uploaded = false;
+        const fail = (error) => { try { socket?.close(); } catch {} reject(error); };
+        socket.onerror = () => fail(new Error("Не удалось подключиться к серверу мультиплеера."));
+        socket.onclose = () => { if (!uploaded) reject(new Error("Соединение с сервером прервалось.")); };
+        socket.onopen = () => socket.send(JSON.stringify({ type: "create_room", name: "Хост", ownerKey }));
+        socket.onmessage = async (event) => {
+          const message = JSON.parse(event.data);
+          if (message.type === "error") { fail(new Error(message.code)); return; }
+          if (message.type === "room" && !roomCreated) {
+            roomCreated = true;
+            const { room, player } = message;
+            socket.send(JSON.stringify({ type: "configure_lobby", config: { scenarioId: scenarioKey, scenarioName, gameMode: "standard" } }));
+            const onConfigured = async (nextEvent) => {
+              const update = JSON.parse(nextEvent.data);
+              if (update.type === "error") { socket.removeEventListener("message", onConfigured); fail(new Error(update.code)); return; }
+              if (update.type !== "room_updated" || update.room?.config?.scenarioId !== scenarioKey || uploaded) return;
+              uploaded = true;
+              socket.removeEventListener("message", onConfigured);
+              try {
+                const response = await fetch("https://vpi15-multiplayer-production.up.railway.app/scenario/" + room.code, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json", "X-Player-Id": player.id, "X-Reconnect-Token": player.reconnectToken },
+                  body: raw,
+                });
+                const result = await response.json();
+                if (!response.ok || result.hash !== hash) throw new Error(result.error || "Сервер не принял сценарий.");
+                socket.close();
+                const returnTo = window.location.origin + window.location.pathname;
+                const lobbyUrl = new URL("https://vpi15-multiplayer-production.up.railway.app/");
+                lobbyUrl.searchParams.set("autoJoin", "1");
+                lobbyUrl.searchParams.set("code", room.code);
+                lobbyUrl.searchParams.set("token", player.reconnectToken);
+                lobbyUrl.searchParams.set("ownerKey", ownerKey);
+                lobbyUrl.searchParams.set("name", "Хост");
+                lobbyUrl.searchParams.set("returnTo", returnTo);
+                window.location.assign(lobbyUrl.toString());
+                resolve();
+              } catch (error) { fail(error); }
+            };
+            socket.addEventListener("message", onConfigured);
+          }
+        };
+      });
+    } catch (error) {
+      setMultiplayerError(error?.message || "Не удалось создать сетевую комнату.");
+      setMultiplayerBusy(false);
+    }
+  };
+
   // Which country the open game is played as, from the game's own record: the
   // library's list has it as it stood when the list was last read, and it
   // changes in play (the Play As Country cheat first of all). Told to the
@@ -810,6 +880,10 @@ const Main = ({
           setSettingsInitialSection("general");
           setIsSettingsOpen(true);
         }} />
+        {mainMenuOpen && <div style={{ position: "fixed", right: "1rem", bottom: "1rem", zIndex: 2147482000, display: "grid", gap: "0.45rem", justifyItems: "end" }}>
+          {multiplayerError && <div role="alert" style={{ maxWidth: "min(90vw, 26rem)", padding: "0.65rem 0.85rem", borderRadius: "0.6rem", background: "#421f24", color: "#fff", fontSize: "0.85rem" }}>{multiplayerError}</div>}
+          <button type="button" disabled={multiplayerBusy} onClick={createMultiplayerRoom} style={{ border: "1px solid rgba(255,255,255,.24)", borderRadius: "999px", padding: "0.8rem 1.2rem", background: "#176b83", color: "#fff", fontWeight: 700, cursor: multiplayerBusy ? "wait" : "pointer", boxShadow: "0 8px 26px rgba(0,0,0,.38)" }}>{multiplayerBusy ? "Готовим сетевую комнату…" : "Создать сетевую игру"}</button>
+        </div>}
         {/* The game's own controls, and with them everything they run (the
             date widget runs the game), are mounted when a game is opened and
             not before: at startup the menu above is all there is. */}
