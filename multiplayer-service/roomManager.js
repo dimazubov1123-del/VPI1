@@ -15,7 +15,7 @@ export class RoomManager {
     let code;
     do { code = this.codeFactory(); } while (this.rooms.has(code));
     const player = this.#newPlayer(name);
-    const room = { code, hostId: player.id, players: new Map([[player.id, player]]), status: "lobby", config: { scenarioId: "", scenarioName: "", gameMode: "standard", settings: {} }, state: null, diplomacyMessages: [], savedAssignments: {}, createdAt: this.now(), updatedAt: this.now() };
+    const room = { code, hostId: player.id, players: new Map([[player.id, player]]), status: "lobby", config: { scenarioId: "", scenarioName: "", gameMode: "standard", settings: {} }, state: null, scenarioHash: null, scenarioReady: new Set(), diplomacyMessages: [], savedAssignments: {}, createdAt: this.now(), updatedAt: this.now() };
     this.rooms.set(code, room);
     return { room: this.snapshot(room), player: this.#credentials(player) };
   }
@@ -33,6 +33,9 @@ export class RoomManager {
     room.players.set(player.id, player); room.updatedAt = this.now();
     return { room: this.snapshot(room), player: this.#credentials(player), reconnected: false };
   }
+  isHostToken(code, playerId, token) { const room=this.rooms.get(String(code ?? "").toUpperCase()); const player=room?.players.get(String(playerId)); return Boolean(room && room.hostId===playerId && player?.token===token && room.status==="lobby"); }
+  setScenarioBundle(code, playerId, hash) { const room=this.#requireRoom(code); this.#assertHost(room,playerId); if(room.status!=="lobby") throw new Error("GAME_ALREADY_STARTED"); room.scenarioHash=String(hash); room.scenarioReady=new Set(); room.updatedAt=this.now(); return this.snapshot(room); }
+  setScenarioReady(code, playerId, hash) { const room=this.#requireRoom(code); if(room.status!=="lobby") throw new Error("GAME_ALREADY_STARTED"); if(!room.scenarioHash || hash!==room.scenarioHash) throw new Error("SCENARIO_HASH_MISMATCH"); if(!room.players.has(String(playerId))) throw new Error("PLAYER_NOT_FOUND"); room.scenarioReady ||= new Set(); room.scenarioReady.add(String(playerId)); room.updatedAt=this.now(); return this.snapshot(room); }
   configureLobby(code, playerId, config = {}) {
     const room = this.#requireRoom(code);
     this.#assertHost(room, playerId);
@@ -65,6 +68,7 @@ export class RoomManager {
     if (room.status !== "lobby") throw new Error("GAME_ALREADY_STARTED");
     if (!room.config.scenarioId || !room.config.scenarioName) throw new Error("SCENARIO_REQUIRED");
     if ([...room.players.values()].some(p => !p.countryId)) throw new Error("COUNTRIES_NOT_ASSIGNED");
+    if (room.scenarioHash && [...room.players.values()].some(p => !room.scenarioReady?.has(p.id))) throw new Error("SCENARIO_DOWNLOADS_PENDING");
     room.status = "playing"; if (state != null) room.state = this.#validateState(state); room.updatedAt = this.now();
     return this.snapshot(room);
   }
@@ -147,7 +151,7 @@ export class RoomManager {
   }
   snapshot(value) {
     const room = typeof value === "string" ? this.#requireRoom(value) : value;
-    return { code: room.code, hostId: room.hostId, status: room.status, config: room.config, players: [...room.players.values()].map(({id,name,countryId,connected}) => ({id,name,countryId,connected})), state: room.state, savedAssignments: room.savedAssignments || {}, createdAt: room.createdAt, updatedAt: room.updatedAt };
+    return { code: room.code, hostId: room.hostId, status: room.status, config: room.config, players: [...room.players.values()].map(({id,name,countryId,connected}) => ({id,name,countryId,connected})), state: room.state, scenarioHash: room.scenarioHash || null, scenarioReady: [...(room.scenarioReady || [])], savedAssignments: room.savedAssignments || {}, createdAt: room.createdAt, updatedAt: room.updatedAt };
   }
   #newPlayer(name) { return { id: randomBytes(12).toString("hex"), token: this.tokenFactory(), name: cleanName(name), countryId: null, connected: true, disconnectedAt: null }; }
   #credentials(player) { return { id: player.id, reconnectToken: player.token }; }
