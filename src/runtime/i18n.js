@@ -7,7 +7,9 @@
 import { translationModelFor } from "./translationModels.js";
 
 const STORAGE_KEY = "ui_language";
-export const DEFAULT_LANGUAGE = "ru";
+export const DEFAULT_LANGUAGE = "en";
+// The language a new player sees unless they have chosen another one.
+export const INITIAL_LANGUAGE = "ru";
 
 // What the advisor and diplomatic chats reply in, so the interface can be read
 // in one language and the chats held in another. Defaults to the UI language —
@@ -120,7 +122,7 @@ export const getStoredLanguage = () => {
   if (heldLanguage) return heldLanguage;
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
-    return stored && stored.trim() ? stored.trim() : DEFAULT_LANGUAGE;
+    return stored && stored.trim() ? stored.trim() : INITIAL_LANGUAGE;
   } catch {
     return DEFAULT_LANGUAGE;
   }
@@ -192,7 +194,7 @@ export const syncLanguageFromServer = async () => {
     const settings = await response.json();
     const serverLanguage = typeof settings?.language === "string" && settings.language.trim()
       ? settings.language.trim()
-      : DEFAULT_LANGUAGE;
+      : INITIAL_LANGUAGE;
 
     if (serverLanguage !== getStoredLanguage()) {
       writeLocalLanguage(serverLanguage);
