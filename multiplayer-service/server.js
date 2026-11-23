@@ -142,7 +142,7 @@ const server = createServer(async (req,res) => {
     return;
   }
 
-  const aiProxyMatch = pathname.match(/^\\/ai-proxy\\/([A-Z0-9]{6})$/);
+  const aiProxyMatch = pathname.match(/^\/ai-proxy\/([A-Z0-9]{6})$/);
   if (aiProxyMatch && req.method === "POST") {
     try {
       const code = aiProxyMatch[1], playerId = String(req.headers["x-player-id"] || ""), token = String(req.headers["x-reconnect-token"] || "");
