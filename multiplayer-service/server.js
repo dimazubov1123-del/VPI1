@@ -21,8 +21,22 @@ const sessions = new Map();
 const server = createServer(async (req,res) => {
   const pathname = new URL(req.url || "/", "http://localhost").pathname;
   const corsHeaders = { "Access-Control-Allow-Origin": req.headers.origin || "*", "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, X-Player-Id, X-Reconnect-Token", "Vary": "Origin" };
-  if ((pathname.startsWith("/scenario/") || pathname.startsWith("/turn/")) && req.method === "OPTIONS") { res.writeHead(204, corsHeaders); res.end(); return; }
+  if ((pathname.startsWith("/scenario/") || pathname.startsWith("/turn/") || pathname.startsWith("/room/")) && req.method === "OPTIONS") { res.writeHead(204, corsHeaders); res.end(); return; }
   if (pathname === "/health") { res.writeHead(200,{"content-type":"application/json","cache-control":"no-store"}); res.end(JSON.stringify({ok:true,service:"vpi15-multiplayer"})); return; }
+  // Read-only room presence for the compact in-game multiplayer HUD.
+  const roomMatch = pathname.match(/^\/room\/([A-Z0-9]{6})$/);
+  if (roomMatch && req.method === "GET") {
+    try {
+      const room = rooms.snapshot(roomMatch[1]);
+      const players = room.players.map(({ id, name, countryId, connected }) => ({ id, name, countryId, connected }));
+      res.writeHead(200, { ...corsHeaders, "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+      res.end(JSON.stringify({ code: room.code, status: room.status, players }));
+    } catch {
+      res.writeHead(404, { ...corsHeaders, "content-type": "application/json", "cache-control": "no-store" });
+      res.end(JSON.stringify({ error: "ROOM_NOT_FOUND" }));
+    }
+    return;
+  }
 
   const turnMatch = pathname.match(/^\/turn\/([A-Z0-9]{6})$/);
   if (turnMatch && req.method === "GET") {
