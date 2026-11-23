@@ -2493,6 +2493,7 @@ const DateWidget = ({
     const [multiplayerRoom, setMultiplayerRoom] = useState(null);
     const [multiplayerConnected, setMultiplayerConnected] = useState(false);
     const [multiplayerSyncMessage, setMultiplayerSyncMessage] = useState("");
+    const [multiplayerInputsReady, setMultiplayerInputsReady] = useState(false);
     useEffect(() => {
         let disposed = false;
         let socket = null;
@@ -2523,6 +2524,7 @@ const DateWidget = ({
                 if (message.type === "room_updated" && message.room) {
                     multiplayerRoomRef.current = message.room;
                     setMultiplayerRoom(message.room);
+                    if (message.room.turnPhase !== "host_turn") setMultiplayerInputsReady(false);
                     return;
                 }
                 if (message.type === "error") {
@@ -2530,7 +2532,30 @@ const DateWidget = ({
                     return;
                 }
                 if (message.type === "all_players_ready") {
-                    setMultiplayerSyncMessage("Все игроки готовы. Хост может провести ход.");
+                    setMultiplayerSyncMessage("Все игроки готовы. Собираем приказы стран…");
+                    if (multiplayerPlayerRef.current?.id === multiplayerRoomRef.current?.hostId) {
+                        try {
+                            const current = getRuntimeValue("actions");
+                            const merged = Array.isArray(current) ? [...current] : [];
+                            const seen = new Set(merged.map((item) => String(item?.id || JSON.stringify(item))));
+                            for (const entry of (message.turnInputs || [])) {
+                                const incoming = entry?.inputs?.actions;
+                                if (!Array.isArray(incoming)) continue;
+                                for (const action of incoming) {
+                                    const key = String(action?.id || JSON.stringify(action));
+                                    if (seen.has(key)) continue;
+                                    seen.add(key);
+                                    merged.push(action);
+                                }
+                            }
+                            if (JSON_URLS.actions) await writeJson(JSON_URLS.actions, merged);
+                            setMultiplayerInputsReady(true);
+                            setMultiplayerSyncMessage("Все готовы. Приказы участников собраны — можно проводить ход.");
+                        } catch (error) {
+                            setMultiplayerInputsReady(false);
+                            setMultiplayerSyncMessage("Не удалось собрать приказы игроков: " + error.message);
+                        }
+                    }
                     return;
                 }
                 if (message.type === "turn_committed" && message.room) {
@@ -2880,7 +2905,7 @@ const DateWidget = ({
                 setError("В сетевой партии ход рассчитывает хост. Отметьтесь кнопкой «Готов» и дождитесь синхронизации.");
                 return;
             }
-            if (room.turnPhase !== "host_turn") {
+            if (room.turnPhase !== "host_turn" || !multiplayerInputsReady) {
                 setPanel("skip");
                 setError("Следующий ход закрыт: дождитесь готовности всех игроков.");
                 return;
@@ -4169,7 +4194,7 @@ const DateWidget = ({
                 const socket = multiplayerSocketRef.current;
                 if (!player || !room || !socket || socket.readyState !== WebSocket.OPEN) return;
                 const me = room.players?.find((entry) => entry.id === player.id);
-                socket.send(JSON.stringify({ type: "ready_for_turn", ready: !me?.readyForTurn }));
+                socket.send(JSON.stringify({ type: "ready_for_turn", ready: !me?.readyForTurn, inputs: { actions: getRuntimeValue("actions") || [] } }));
                 setMultiplayerSyncMessage(!me?.readyForTurn ? "Ожидаем готовности остальных игроков…" : "Готовность отменена.");
             }}
             style={{
