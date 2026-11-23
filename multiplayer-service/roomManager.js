@@ -15,7 +15,7 @@ export class RoomManager {
     let code;
     do { code = this.codeFactory(); } while (this.rooms.has(code));
     const player = this.#newPlayer(name);
-    const room = { code, hostId: player.id, players: new Map([[player.id, player]]), status: "lobby", config: { scenarioId: "", scenarioName: "", gameMode: "standard", settings: {} }, state: null, scenarioHash: null, scenarioReady: new Set(), diplomacyMessages: [], savedAssignments: {}, turnNumber: 1, turnPhase: "lobby", createdAt: this.now(), updatedAt: this.now() };
+    const room = { code, hostId: player.id, players: new Map([[player.id, player]]), status: "lobby", config: { scenarioId: "", scenarioName: "", gameMode: "standard", settings: {} }, state: null, scenarioHash: null, scenarioReady: new Set(), diplomacyMessages: [], savedAssignments: {}, turnNumber: 1, turnPhase: "lobby", turnStateHash: null, createdAt: this.now(), updatedAt: this.now() };
     this.rooms.set(code, room);
     return { room: this.snapshot(room), player: this.#credentials(player) };
   }
@@ -79,6 +79,7 @@ export class RoomManager {
     if (room.status !== "playing") throw new Error("GAME_NOT_STARTED");
     if (room.turnPhase !== "host_turn") throw new Error("PLAYERS_NOT_READY");
     room.state = this.#validateState(state);
+    room.turnStateHash = String(room.state?.stateHash || "");
     room.turnNumber = Number(room.state?.round) || room.turnNumber + 1;
     room.turnPhase = "waiting";
     for (const player of room.players.values()) player.readyForTurn = false;
@@ -182,7 +183,7 @@ export class RoomManager {
       players: [...room.players.values()].map((player) => ({ ...player, connected: false, disconnectedAt: this.now(), readyForTurn: false })),
       state: room.state, scenarioHash: room.scenarioHash || null, scenarioReady: [...(room.scenarioReady || [])],
       diplomacyMessages: room.diplomacyMessages || [], savedAssignments: room.savedAssignments || {},
-      turnNumber: room.turnNumber || 1, turnPhase: "waiting", createdAt: room.createdAt, updatedAt: room.updatedAt,
+      turnNumber: room.turnNumber || 1, turnPhase: "waiting", turnStateHash: room.turnStateHash || null, createdAt: room.createdAt, updatedAt: room.updatedAt,
     }));
   }
   restore(records) {
@@ -208,7 +209,7 @@ export class RoomManager {
         scenarioReady: new Set(Array.isArray(saved.scenarioReady) ? saved.scenarioReady : []),
         diplomacyMessages: Array.isArray(saved.diplomacyMessages) ? saved.diplomacyMessages.slice(-2000) : [],
         savedAssignments: saved.savedAssignments || {}, turnNumber: Number(saved.turnNumber) || 1,
-        turnPhase: "waiting", recoveryGraceUntil: this.now() + 7 * 24 * 60 * 60 * 1000, createdAt: Number(saved.createdAt) || this.now(), updatedAt: this.now(),
+        turnPhase: "waiting", turnStateHash: saved.turnStateHash || null, recoveryGraceUntil: this.now() + 7 * 24 * 60 * 60 * 1000, createdAt: Number(saved.createdAt) || this.now(), updatedAt: this.now(),
       };
       this.rooms.set(room.code, room); restored += 1;
     }
@@ -216,7 +217,7 @@ export class RoomManager {
   }
   snapshot(value) {
     const room = typeof value === "string" ? this.#requireRoom(value) : value;
-    return { code: room.code, hostId: room.hostId, status: room.status, config: room.config, players: [...room.players.values()].map(({id,name,countryId,connected,readyForTurn}) => ({id,name,countryId,connected,readyForTurn:Boolean(readyForTurn)})), state: room.state, scenarioHash: room.scenarioHash || null, scenarioReady: [...(room.scenarioReady || [])], savedAssignments: room.savedAssignments || {}, turnNumber: room.turnNumber || 1, turnPhase: room.turnPhase || "lobby", createdAt: room.createdAt, updatedAt: room.updatedAt };
+    return { code: room.code, hostId: room.hostId, status: room.status, config: room.config, players: [...room.players.values()].map(({id,name,countryId,connected,readyForTurn}) => ({id,name,countryId,connected,readyForTurn:Boolean(readyForTurn)})), state: room.state, scenarioHash: room.scenarioHash || null, scenarioReady: [...(room.scenarioReady || [])], savedAssignments: room.savedAssignments || {}, turnNumber: room.turnNumber || 1, turnPhase: room.turnPhase || "lobby", turnStateHash: room.turnStateHash || null, createdAt: room.createdAt, updatedAt: room.updatedAt };
   }
   #newPlayer(name) { return { id: randomBytes(12).toString("hex"), token: this.tokenFactory(), name: cleanName(name), countryId: null, connected: true, disconnectedAt: null, readyForTurn: false }; }
   #credentials(player) { return { id: player.id, reconnectToken: player.token }; }
