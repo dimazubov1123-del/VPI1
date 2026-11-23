@@ -33,6 +33,7 @@ export class RoomManager {
     room.players.set(player.id, player); room.updatedAt = this.now();
     return { room: this.snapshot(room), player: this.#credentials(player), reconnected: false };
   }
+  isPlayerToken(code, playerId, token) { const room=this.rooms.get(String(code ?? "").toUpperCase()); const player=room?.players.get(String(playerId)); return Boolean(room && player && player.token===token); }
   isHostToken(code, playerId, token) { const room=this.rooms.get(String(code ?? "").toUpperCase()); const player=room?.players.get(String(playerId)); return Boolean(room && room.hostId===playerId && player?.token===token && room.status==="lobby"); }
   isHostTurnToken(code, playerId, token) { const room=this.rooms.get(String(code ?? "").toUpperCase()); const player=room?.players.get(String(playerId)); return Boolean(room && room.hostId===playerId && player?.token===token && room.status==="playing"); }
   setScenarioBundle(code, playerId, hash) { const room=this.#requireRoom(code); this.#assertHost(room,playerId); if(room.status!=="lobby") throw new Error("GAME_ALREADY_STARTED"); room.scenarioHash=String(hash); room.scenarioReady=new Set(); room.updatedAt=this.now(); return this.snapshot(room); }

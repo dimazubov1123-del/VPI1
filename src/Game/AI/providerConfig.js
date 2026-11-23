@@ -667,6 +667,33 @@ export function getFallbackList() {
     return Array.isArray(stored) ? stored.map(normalizeEntry) : [];
 }
 
+// The host's existing in-game AI setup is the source of truth for a multiplayer
+// campaign. Credentials are sent only to the multiplayer server over WSS and
+// are never included in the public room snapshot.
+export function getMultiplayerAiConfig() {
+    const connections = getConnections().filter((connection) => {
+        if (connection.provider === AGENT_PROVIDER || !String(connection.apiKey ?? "").trim()) return false;
+        if (!["openai-compatible", "anthropic-compatible"].includes(connection.provider)) return true;
+        try {
+            const endpoint = new URL(String(connection.endpoint || ""));
+            const host = endpoint.hostname.toLowerCase();
+            return endpoint.protocol === "https:"
+                && !["localhost", "127.0.0.1", "::1"].includes(host)
+                && !/^10\./.test(host) && !/^192\.168\./.test(host)
+                && !/^172\.(1[6-9]|2[0-9]|3[01])\./.test(host);
+        } catch { return false; }
+    });
+    const allowed = new Set(connections.map((connection) => connection.id));
+    const fallbackList = getFallbackList().filter((entry) => allowed.has(entry.connectionId));
+    const usedConnections = new Set(fallbackList.map((entry) => entry.connectionId));
+    const sharedConnections = connections.filter((connection) => usedConnections.has(connection.id));
+    const entryIds = new Set(fallbackList.map((entry) => entry.id));
+    const storedPicks = readJsonSetting(TASK_PICKS_KEY, {});
+    const taskPicks = Object.fromEntries(Object.entries(storedPicks && typeof storedPicks === "object" ? storedPicks : {})
+        .filter(([, entryId]) => entryIds.has(entryId)));
+    return { connections: sharedConnections, fallbackList, taskPicks };
+}
+
 // "gemini-3.5-flash (Main Google)": how an entry is named in notices, logs and
 // errors.
 export const describeEntry = (model, connectionName) => `${model || "default model"} (${connectionName})`;
@@ -698,56 +725,39 @@ const resolveEntry = (entry, connectionsById) => {
 
 // The list in order, each entry resolved. An entry whose Connection is gone is
 // left out rather than failing every call.
-// A multiplayer lobby may supply one OpenAI-compatible endpoint for every
-// participant. The endpoint/model are public room settings; API keys are NEVER
-// copied from the host. Each participant's own compatible connection supplies
-// their local key (or an empty key for a server that does not require one).
+// In a multiplayer campaign, participants resolve the host's actual Connections,
+// Fallback list and per-task picks. API keys are represented by server-side proxy
+// markers in the clients; only the host's Railway session retains the secrets.
 let multiplayerAiOverride = null;
 
 export function setMultiplayerAiOverride(value) {
-    const endpoint = String(value?.endpoint ?? "").trim().replace(/\/+$/, "");
-    let validEndpoint = "";
-    if (endpoint) {
-        try {
-            const parsed = new URL(endpoint);
-            if (["http:", "https:"].includes(parsed.protocol) && !parsed.username && !parsed.password && !parsed.search && !parsed.hash) {
-                validEndpoint = parsed.toString().replace(/\/+$/, "");
-            }
-        } catch { /* invalid shared endpoint: use the player's own list */ }
+    if (value && Array.isArray(value.connections) && Array.isArray(value.fallbackList)) {
+        const connections = value.connections
+            .filter((connection) => connection && connection.provider !== AGENT_PROVIDER)
+            .map((connection) => ({ ...connection, apiKey: `VPI15_PROXY_KEY:${String(connection.id ?? "")}` }));
+        const allowed = new Set(connections.map((connection) => connection.id));
+        const fallbackList = value.fallbackList.filter((entry) => allowed.has(entry.connectionId));
+        multiplayerAiOverride = {
+            connections,
+            fallbackList,
+            taskPicks: value.taskPicks && typeof value.taskPicks === "object" ? value.taskPicks : {},
+        };
+    } else {
+        multiplayerAiOverride = null;
     }
-    multiplayerAiOverride = validEndpoint ? {
-        endpoint: validEndpoint,
-        model: String(value?.model ?? "").trim(),
-    } : null;
     try { window.dispatchEvent(new CustomEvent("ai:fallback-changed")); } catch { /* no window */ }
 }
 
 export function getResolvedFallbackList() {
+    if (multiplayerAiOverride) {
+        const connectionsById = new Map(multiplayerAiOverride.connections.map((connection) => [connection.id, connection]));
+        return multiplayerAiOverride.fallbackList
+            .map((entry) => resolveEntry(entry, connectionsById))
+            .filter(Boolean);
+    }
     const connections = getConnections();
     const connectionsById = new Map(connections.map((connection) => [connection.id, connection]));
-    const localEntries = getFallbackList().map((entry) => resolveEntry(entry, connectionsById)).filter(Boolean);
-    if (!multiplayerAiOverride?.endpoint) return localEntries;
-
-    const localCompatibleEntry = localEntries.find((entry) => entry.provider === "openai-compatible");
-    const localCompatible = connections.find((connection) => connection.id === localCompatibleEntry?.connectionId && connection.apiKey.trim())
-        || connections.find((connection) => connection.provider === "openai-compatible" && connection.apiKey.trim())
-        || connections.find((connection) => connection.id === localCompatibleEntry?.connectionId)
-        || connections.find((connection) => connection.provider === "openai-compatible");
-    const model = multiplayerAiOverride.model || localCompatibleEntry?.model || localCompatible?.suggestedModel || "";
-    const sharedEntry = {
-        id: "multiplayer-shared-ai",
-        connectionId: localCompatible?.id || "multiplayer-shared-ai",
-        provider: "openai-compatible",
-        connectionName: "Общий ИИ хоста",
-        apiKey: localCompatibleEntry?.apiKey || localCompatible?.apiKey || "",
-        endpoint: multiplayerAiOverride.endpoint,
-        model,
-        customParams: localCompatibleEntry?.customParams || localCompatible?.customParams || "",
-        structuredMode: "auto",
-        toolStrict: localCompatibleEntry?.toolStrict === true || localCompatible?.toolStrict === true,
-        label: describeEntry(model, "Общий ИИ хоста"),
-    };
-    return [sharedEntry, ...localEntries.filter((entry) => !(entry.provider === "openai-compatible" && entry.endpoint === multiplayerAiOverride.endpoint))];
+    return getFallbackList().map((entry) => resolveEntry(entry, connectionsById)).filter(Boolean);
 }
 
 // Whether an entry has what its provider needs before a call can go out: a
@@ -1153,10 +1163,14 @@ export function resolveTaskFallbackEntries(taskKey, sourceEntries = null) {
     const entries = Array.isArray(sourceEntries) ? [...sourceEntries] : getResolvedFallbackList();
     if (!key || entries.length === 0) return { entries, preferredEntryId: "", implicit: false };
 
-    // In a multiplayer campaign the host's endpoint is authoritative for every
-    // task, even when a participant had saved per-task model picks locally.
-    if (multiplayerAiOverride?.endpoint && entries.some((entry) => entry.id === "multiplayer-shared-ai")) {
-        return { entries, preferredEntryId: "multiplayer-shared-ai", implicit: true };
+    // In a multiplayer campaign the host's Fallback list and task picks are
+    // authoritative, even when a participant has saved local AI preferences.
+    if (multiplayerAiOverride) {
+        const explicitSharedPick = multiplayerAiOverride.taskPicks?.[key];
+        if (explicitSharedPick && entries.some((entry) => entry.id === explicitSharedPick)) {
+            return { entries, preferredEntryId: explicitSharedPick, implicit: false };
+        }
+        return { entries, preferredEntryId: "", implicit: false };
     }
 
     const explicitPick = getTaskPick(key);

@@ -42,6 +42,7 @@ import {
   describeProviderSetupNeed,
   getProviderMeta,
   getResolvedFallbackList,
+  getMultiplayerAiConfig,
   isFallbackListConfigured,
   syncAiDebugContext,
   setMultiplayerAiOverride,
@@ -389,9 +390,77 @@ const Main = ({
         session = JSON.parse(localStorage.getItem(`vpi15-mp-session:${activeGame.id}`) || "null");
       }
     } catch { session = null; }
-    setMultiplayerAiOverride(session?.aiConfig || null);
+    setMultiplayerAiOverride(session?.role === "player"
+      ? (session.aiConfig || { connections: [], fallbackList: [] })
+      : null);
     setAiSetup(readAiSetup());
     return () => setMultiplayerAiOverride(null);
+  }, [activeGame?.id, gameEntered]);
+
+  // The host refreshes the server-side secret store from the game's own AI
+  // Connections whenever the campaign opens or its AI settings change. Keys
+  // are never put in room snapshots, invite URLs or participant storage.
+  useEffect(() => {
+    if (!gameEntered || !activeGame?.id || typeof window === "undefined") return undefined;
+    let session = null;
+    try { session = JSON.parse(localStorage.getItem(`vpi15-mp-session:${activeGame.id}`) || "null"); } catch { session = null; }
+    if (session?.role !== "host" || !session.room || !session.player || !session.token) return undefined;
+    const base = String(session.server || "").replace(/^wss:/i, "https:").replace(/^ws:/i, "http:").replace(/\/ws(?:\/.*)?$/, "");
+    if (!base) return undefined;
+    let stopped = false;
+    const sync = async () => {
+      try {
+        await fetch(`${base}/ai-config/${encodeURIComponent(session.room)}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Player-Id": session.player,
+            "X-Reconnect-Token": session.token,
+          },
+          body: JSON.stringify(getMultiplayerAiConfig()),
+        });
+      } catch { /* The next settings change or campaign reload retries. */ }
+    };
+    void sync();
+    const timer = window.setInterval(() => { if (!stopped) void sync(); }, 20000);
+    const onAiChanged = () => { if (!stopped) void sync(); };
+    window.addEventListener("ai:fallback-changed", onAiChanged);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+      window.removeEventListener("ai:fallback-changed", onAiChanged);
+    };
+  }, [activeGame?.id, gameEntered]);
+
+  // Guests refresh the public host AI configuration, never the secret key.
+  // This also lets a host finish entering their key after the guests have
+  // already loaded the campaign, or recover after the Railway process restarts.
+  useEffect(() => {
+    if (!gameEntered || !activeGame?.id || typeof window === "undefined") return undefined;
+    let session = null;
+    try { session = JSON.parse(localStorage.getItem(`vpi15-mp-session:${activeGame.id}`) || "null"); } catch { session = null; }
+    if (session?.role !== "player" || !session.room || !session.player || !session.token) return undefined;
+    const base = String(session.server || "").replace(/^wss:/i, "https:").replace(/^ws:/i, "http:").replace(/\/ws(?:\/.*)?$/, "");
+    if (!base) return undefined;
+    let stopped = false;
+    const refresh = async () => {
+      try {
+        const response = await fetch(`${base}/ai-config/${encodeURIComponent(session.room)}`, {
+          cache: "no-store",
+          headers: { "X-Player-Id": session.player, "X-Reconnect-Token": session.token },
+        });
+        if (!response.ok || stopped) return;
+        const aiConfig = await response.json();
+        session = { ...session, aiConfig };
+        localStorage.setItem("vpi15-mp-session", JSON.stringify(session));
+        localStorage.setItem(`vpi15-mp-session:${activeGame.id}`, JSON.stringify(session));
+        setMultiplayerAiOverride(aiConfig);
+        setAiSetup(readAiSetup());
+      } catch { /* Keep the last known shared config until the next poll. */ }
+    };
+    void refresh();
+    const timer = window.setInterval(() => { if (!stopped) void refresh(); }, 15000);
+    return () => { stopped = true; window.clearInterval(timer); };
   }, [activeGame?.id, gameEntered]);
 
   // A lobby returns every ready player here with the same scenario bundle
@@ -405,13 +474,12 @@ const Main = ({
     const country = params.get("mpCountry");
     const player = params.get("mpPlayer");
     const token = params.get("mpToken");
-    const aiEndpoint = params.get("mpAiEndpoint") || "";
-    const aiModel = params.get("mpAiModel") || "";
+    const role = params.get("mpRole") === "host" ? "host" : "player";
     if (!room || !hash || !country || !player || !token) return;
 
     const cleanUrl = () => {
       const url = new URL(window.location.href);
-      ["mpRoom", "mpHash", "mpCountry", "mpPlayer", "mpToken", "mpAiEndpoint", "mpAiModel"].forEach((key) => url.searchParams.delete(key));
+      ["mpRoom", "mpHash", "mpCountry", "mpPlayer", "mpToken", "mpRole", "mpAiEndpoint", "mpAiModel"].forEach((key) => url.searchParams.delete(key));
       window.history.replaceState({}, "", url.toString());
     };
     cleanUrl();
@@ -431,6 +499,23 @@ const Main = ({
         if (actualHash !== hash) throw new Error("Контрольная сумма сценария не совпала. Попросите хоста повторно загрузить сценарий.");
         const bundle = JSON.parse(raw);
         const imported = await importScenarioBundle(bundle);
+        const multiplayerServer = "https://vpi15-multiplayer-production.up.railway.app";
+        let aiConfig = null;
+        if (role === "player") {
+          let aiResponse = null;
+          for (let attempt = 0; attempt < 8; attempt += 1) {
+            aiResponse = await fetch(`${multiplayerServer}/ai-config/${encodeURIComponent(room)}`, {
+              cache: "no-store",
+              headers: { "X-Player-Id": player, "X-Reconnect-Token": token },
+            });
+            if (aiResponse.ok || aiResponse.status !== 404) break;
+            await new Promise((resolve) => window.setTimeout(resolve, 750));
+          }
+          if (!aiResponse?.ok) throw new Error(aiResponse?.status === 404
+            ? "Хост ещё не подключил ИИ в настройках основной игры. Попросите хоста переподключиться."
+            : `Не удалось получить настройки ИИ хоста (HTTP ${aiResponse?.status || "нет связи"}).`);
+          aiConfig = await aiResponse.json();
+        }
         const library = getLibraryState();
         const importedId = imported?.scenario?.id || imported?.scenarioId || imported?.id;
         const scenarioName = bundle?.scenario?.name || "Сетевая кампания";
@@ -441,7 +526,7 @@ const Main = ({
           name: `${scenario.name} — сетевая партия`,
           scenarioId: scenario.id,
           gamePatch: { country },
-          multiplayerSession: { room, hash, country, player, token, role: "player", connectedAt: Date.now(), server: "wss://vpi15-multiplayer-production.up.railway.app/ws", aiConfig: aiEndpoint ? { endpoint: aiEndpoint, model: aiModel } : null },
+          multiplayerSession: { room, hash, country, player, token, role, connectedAt: Date.now(), server: "wss://vpi15-multiplayer-production.up.railway.app/ws", aiConfig },
           setActive: true,
         });
         sessionStorage.setItem(launchKey, "done");
@@ -478,15 +563,16 @@ const Main = ({
         const fail = (error) => { try { socket?.close(); } catch {} reject(error); };
         socket.onerror = () => fail(new Error("Не удалось подключиться к серверу мультиплеера."));
         socket.onclose = () => { if (!uploaded) reject(new Error("Соединение с сервером прервалось.")); };
-        socket.onopen = () => socket.send(JSON.stringify({ type: "create_room", name: "Хост", ownerKey }));
+        socket.onopen = () => socket.send(JSON.stringify({
+          type: "create_room", name: "Хост", ownerKey, aiConfig: getMultiplayerAiConfig(),
+        }));
         socket.onmessage = async (event) => {
           const message = JSON.parse(event.data);
           if (message.type === "error") { fail(new Error(message.code)); return; }
           if (message.type === "room" && !roomCreated) {
             roomCreated = true;
             const { room, player } = message;
-            const sharedAi = getResolvedFallbackList().find((entry) => entry.provider === "openai-compatible" && entry.endpoint);
-            socket.send(JSON.stringify({ type: "configure_lobby", config: { scenarioId: scenarioKey, scenarioName, gameMode: "standard", settings: { ai: sharedAi ? { endpoint: sharedAi.endpoint, model: sharedAi.model || "" } : {} } } }));
+            socket.send(JSON.stringify({ type: "configure_lobby", config: { scenarioId: scenarioKey, scenarioName, gameMode: "standard", settings: {} } }));
             const onConfigured = async (nextEvent) => {
               const update = JSON.parse(nextEvent.data);
               if (update.type === "error") { socket.removeEventListener("message", onConfigured); fail(new Error(update.code)); return; }
@@ -579,7 +665,10 @@ const Main = ({
     setApiPromptAnsweredFor(id);
     try { sessionStorage.setItem("oh:api-setup-answered", id); } catch { /* the prompt just shows again next time */ }
   };
+  let multiplayerRole = null;
+  try { multiplayerRole = JSON.parse(localStorage.getItem("vpi15-mp-session") || "null")?.role || null; } catch { multiplayerRole = null; }
   const showApiPrompt = loaded && Boolean(activeGame?.id) && !mainMenuOpen && !providerReady
+    && multiplayerRole !== "player"
     && apiPromptAnsweredFor !== String(activeGame?.id) && !isSettingsOpen && !showGameLoading;
 
   // Asked again while the warning is up. WebGL is refused for a moment while
