@@ -2622,6 +2622,17 @@ const DateWidget = ({
             socket.onerror = () => setMultiplayerConnected(false);
             socket.onclose = () => {
                 setMultiplayerConnected(false);
+                const room = multiplayerRoomRef.current;
+                const player = multiplayerPlayerRef.current;
+                if (room && player) {
+                    const disconnected = {
+                        ...room,
+                        players: (room.players || []).map((entry) => entry.id === player.id ? { ...entry, connected: false } : entry),
+                    };
+                    multiplayerRoomRef.current = disconnected;
+                    setMultiplayerRoom(disconnected);
+                    try { localStorage.setItem("vpi15-mp-room", JSON.stringify(disconnected)); } catch {}
+                }
                 if (disposed) return;
                 attempts += 1;
                 reconnectTimer = window.setTimeout(connect, Math.min(15000, 1000 * (2 ** Math.min(attempts, 4))));
