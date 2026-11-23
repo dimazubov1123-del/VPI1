@@ -705,13 +705,13 @@ const resolveEntry = (entry, connectionsById) => {
 let multiplayerAiOverride = null;
 
 export function setMultiplayerAiOverride(value) {
-    const endpoint = String(value?.endpoint ?? "").trim().replace(/\\/+$/, "");
+    const endpoint = String(value?.endpoint ?? "").trim().replace(/\/+$/, "");
     let validEndpoint = "";
     if (endpoint) {
         try {
             const parsed = new URL(endpoint);
             if (["http:", "https:"].includes(parsed.protocol) && !parsed.username && !parsed.password) {
-                validEndpoint = parsed.toString().replace(/\\/+$/, "");
+                validEndpoint = parsed.toString().replace(/\/+$/, "");
             }
         } catch { /* invalid shared endpoint: use the player's own list */ }
     }
