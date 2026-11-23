@@ -108,3 +108,18 @@ test("collects each country's queued actions when all players are ready", () => 
  assert.equal(result.allReady,true);
  assert.deepEqual(result.turnInputs.map(entry=>entry.inputs.actions[0].id),["host-order","guest-order"]);
 });
+
+
+test("allows a player to cancel the ready barrier before the host commits the turn", () => {
+ const {manager}=setup(); const {host,guest}=readyRoom(manager); const hash="f".repeat(64);
+ manager.setScenarioBundle(host.room.code,host.player.id,hash);
+ manager.setScenarioReady(host.room.code,host.player.id,hash);
+ manager.setScenarioReady(host.room.code,guest.player.id,hash);
+ manager.startGame(host.room.code,host.player.id,{round:1});
+ manager.setReadyForTurn(host.room.code,host.player.id,true,{actions:[{id:"a"}]});
+ manager.setReadyForTurn(host.room.code,guest.player.id,true,{actions:[{id:"b"}]});
+ const reopened=manager.setReadyForTurn(guest.room.code || host.room.code,guest.player.id,false);
+ assert.equal(reopened.allReady,false);
+ assert.equal(reopened.room.turnPhase,"waiting");
+ assert.ok(reopened.room.players.every(player=>!player.readyForTurn));
+});
