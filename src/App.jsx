@@ -20,8 +20,7 @@ import {
   createMenuStartupState,
   runStartupPreload,
 } from "./runtime/preload.js";
-import { createGame, ensureLibraryCatalog, getLibraryState, importScenarioBundle, loadScenarioDetails, useLibraryState } from "./runtime/library.js";
-import { findScenarioCopyOfBundle } from "./runtime/importedScenarioCopy.js";
+import { ensureLibraryCatalog, useLibraryState } from "./runtime/library.js";
 import { hasEnteredGame, useGameEntered } from "./runtime/gameEntry.js";
 import { VaultDoor } from "./Game/GameUI/VaultDoor.jsx";
 import { holdMusicBehindDoor } from "./runtime/ambientMusic.js";
