@@ -649,7 +649,7 @@ async function multiplayerAiFetch(url, options = {}) {
     const hasMarker = markerPattern.test(String(url))
         || Object.values(options.headers || {}).some((value) => markerPattern.test(String(value)));
     if (!hasMarker) return null;
-    const base = String(session.server || "").replace(/^wss:/i, "https:").replace(/^ws:/i, "http:").replace(/\\/ws(?:\\/.*)?$/, "");
+    const base = String(session.server || "").replace(/^wss:/i, "https:").replace(/^ws:/i, "http:").replace(/\/ws(?:\/.*)?$/, "");
     if (!base) throw new Error("Сервер мультиплеера не настроен для общего ИИ.");
     return fetch(`${base}/ai-proxy/${encodeURIComponent(session.room)}`, {
         method: "POST",
