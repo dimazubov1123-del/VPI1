@@ -1657,6 +1657,38 @@ const ConversationView = ({ chat, playerCountry, gameDate, world = {}, onDelete,
             if (isPlayerCountry(country)) {
                 return;
             }
+            // A country controlled by another connected human receives the same
+            // diplomatic letter through the multiplayer room; every other
+            // country continues through the existing AI diplomacy path.
+            try {
+                const session = JSON.parse(localStorage.getItem("vpi15-mp-session") || "null");
+                const room = JSON.parse(localStorage.getItem("vpi15-mp-room") || "null");
+                const human = room?.players?.find((entry) =>
+                    entry.countryId === country.code && entry.connected && entry.id !== session?.player
+                );
+                if (session?.room && session?.country && human) {
+                    const pair = [session.country, country.code].sort();
+                    const asked = [...messagesRef.current].reverse().find((msg) => msg.role === "user" && msg.text === playerMessage);
+                    window.dispatchEvent(new CustomEvent("vpi15:mp-diplomacy-send", {
+                        detail: {
+                            toCountry: country.code,
+                            threadId: "mp:" + pair.join(":"),
+                            text: playerMessage,
+                            clientMessageId: newThreadId("mpmsg"),
+                        },
+                    }));
+                    pushMessages([...messagesRef.current, {
+                        id: newThreadId("msg"),
+                        role: "leader",
+                        speaker: country.name,
+                        code: country.code,
+                        text: "Сообщение отправлено игроку. Ожидается ответ.",
+                        time: asked?.time || gameDate,
+                        multiplayerPending: true,
+                    }]);
+                    return;
+                }
+            } catch { /* A malformed local session must not interrupt AI diplomacy. */ }
             setIsLoading(true);
             setSpeakingCountry(country);
             // The player's message as stored: the catch-up it was sent with
@@ -4035,6 +4067,59 @@ const ChatPanel = ({ isOpen, onClose, requestedCountry, requestedDraft = "", onC
             return updated;
         });
     };
+
+    useEffect(() => {
+        const onMultiplayerDiplomacy = (event) => {
+            const message = event?.detail;
+            if (!message?.id || !message?.fromCountry || message.toCountry !== playerCountry || !message.text) return;
+            const sender = countries.find((entry) => entry.code === message.fromCountry)
+                || { code: message.fromCountry, name: message.fromCountry };
+            const recipient = countries.find((entry) => entry.code === message.toCountry)
+                || { code: message.toCountry, name: playerCountry };
+            const threadId = String(message.threadId || "");
+            const incoming = {
+                id: String(message.id),
+                role: "leader",
+                speaker: sender.name,
+                code: sender.code,
+                text: message.text,
+                time: gameDate,
+                multiplayerMessageId: String(message.id),
+            };
+            setChats((previous) => {
+                const index = previous.findIndex((entry) => {
+                    if (entry.status === "closed") return false;
+                    if (threadId && entry.multiplayerThreadId === threadId) return true;
+                    const codes = (entry.countries || []).map((country) => country?.code);
+                    return codes.includes(message.fromCountry) && codes.includes(message.toCountry);
+                });
+                let updated;
+                if (index >= 0) {
+                    const existing = previous[index];
+                    if ((existing.messages || []).some((item) => item.id === incoming.id || item.multiplayerMessageId === incoming.id)) return previous;
+                    const next = {
+                        ...existing,
+                        multiplayerThreadId: threadId || existing.multiplayerThreadId,
+                        messages: [...(existing.messages || []), incoming],
+                    };
+                    updated = previous.map((entry, position) => position === index ? next : entry);
+                    setActiveChat((active) => sameChatId(active?.id, existing.id) ? { ...active, messages: next.messages } : active);
+                } else {
+                    updated = [{
+                        id: newChatId(),
+                        countries: [recipient, sender],
+                        messages: [incoming],
+                        status: "open",
+                        multiplayerThreadId: threadId,
+                    }, ...previous];
+                }
+                persistChats(updated);
+                return updated;
+            });
+        };
+        window.addEventListener("vpi15:mp-diplomacy-incoming", onMultiplayerDiplomacy);
+        return () => window.removeEventListener("vpi15:mp-diplomacy-incoming", onMultiplayerDiplomacy);
+    }, [countries, playerCountry, gameDate]);
 
     // What the one-request turn changed beyond the messages: the event log
     // itself (the truth of the thread), the roster after a join or a departure,
