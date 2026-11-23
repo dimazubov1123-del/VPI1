@@ -390,6 +390,7 @@ const Main = ({
       }
     } catch { session = null; }
     setMultiplayerAiOverride(session?.aiConfig || null);
+    setAiSetup(readAiSetup());
     return () => setMultiplayerAiOverride(null);
   }, [activeGame?.id, gameEntered]);
 
