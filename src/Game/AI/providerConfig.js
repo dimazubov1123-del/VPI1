@@ -723,10 +723,9 @@ const resolveEntry = (entry, connectionsById) => {
 
 // The list in order, each entry resolved. An entry whose Connection is gone is
 // left out rather than failing every call.
-// A multiplayer lobby may supply one OpenAI-compatible endpoint for every
-// participant. The endpoint/model are public room settings; API keys are NEVER
-// copied from the host. Each participant's own compatible connection supplies
-// their local key (or an empty key for a server that does not require one).
+// In a multiplayer campaign, participants resolve the host's actual Connections,
+// Fallback list and per-task picks. API keys are represented by server-side proxy
+// markers in the clients; only the host's Railway session retains the secrets.
 let multiplayerAiOverride = null;
 
 export function setMultiplayerAiOverride(value) {
@@ -1162,8 +1161,8 @@ export function resolveTaskFallbackEntries(taskKey, sourceEntries = null) {
     const entries = Array.isArray(sourceEntries) ? [...sourceEntries] : getResolvedFallbackList();
     if (!key || entries.length === 0) return { entries, preferredEntryId: "", implicit: false };
 
-    // In a multiplayer campaign the host's endpoint is authoritative for every
-    // task, even when a participant had saved per-task model picks locally.
+    // In a multiplayer campaign the host's Fallback list and task picks are
+    // authoritative, even when a participant has saved local AI preferences.
     if (multiplayerAiOverride) {
         const explicitSharedPick = multiplayerAiOverride.taskPicks?.[key];
         if (explicitSharedPick && entries.some((entry) => entry.id === explicitSharedPick)) {
