@@ -12,6 +12,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const origins = (process.env.ALLOWED_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean);
 const rooms = new RoomManager();
 const saves = new SaveStore();
+const persistRooms = async () => { try { await saves.saveRooms(rooms.dump()); } catch (error) { console.error("Could not persist multiplayer rooms:", error); } };
 const scenarioDir = process.env.SCENARIO_DIR || "/data/scenarios";
 const MAX_SCENARIO_BYTES = 100 * 1024 * 1024;
 const sessions = new Map();
@@ -40,6 +41,7 @@ const server = createServer(async (req,res) => {
       const target = join(scenarioDir, `${code}.json`), temp = target + ".tmp";
       await writeFile(temp, raw); await rename(temp, target);
       const room = rooms.setScenarioBundle(code, playerId, hash);
+      await persistRooms();
       broadcast(code, "room_updated", { room });
       res.writeHead(200, { ...corsHeaders, "content-type": "application/json" }); res.end(JSON.stringify({ ok: true, hash, bytes: size }));
     } catch (error) { const status = error.message === "SCENARIO_TOO_LARGE" ? 413 : error.message === "HOST_ONLY" ? 403 : 400; res.writeHead(status, { ...corsHeaders, "content-type": "application/json" }); res.end(JSON.stringify({ error: error.message || "SCENARIO_UPLOAD_FAILED" })); }
@@ -60,7 +62,7 @@ const server = createServer(async (req,res) => {
 const wss = new WebSocketServer({server,path:"/ws",maxPayload:300*1024,verifyClient:({origin},done) => done(origins.length===0 || !origin || origins.includes(origin),403,"Origin not allowed")});
 const send = (ws,type,payload={}) => { if(ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify({type,...payload})); };
 const broadcast = (code,type,payload={}) => { for(const [ws,s] of sessions) if(s.code===code) send(ws,type,payload); };
-const attach = (ws,result,ownerKey=null) => { sessions.set(ws,{code:result.room.code,playerId:result.player.id,ownerKey}); send(ws,"room",{room:result.room,player:result.player,reconnected:Boolean(result.reconnected)}); broadcast(result.room.code,"room_updated",{room:result.room}); };
+const attach = (ws,result,ownerKey=null) => { sessions.set(ws,{code:result.room.code,playerId:result.player.id,ownerKey}); send(ws,"room",{room:result.room,player:result.player,reconnected:Boolean(result.reconnected)}); broadcast(result.room.code,"room_updated",{room:result.room}); void persistRooms(); };
 wss.on("connection",ws => {
   ws.on("message",async raw => {
     try {
@@ -72,7 +74,9 @@ wss.on("connection",ws => {
       if(!session) throw new Error("NOT_IN_ROOM");
       const {code,playerId}=session;
       if(msg.type==="ping") { send(ws,"pong",{at:Date.now()}); return; }
-      if(msg.type==="scenario_ready") { const room=rooms.setScenarioReady(code,playerId,msg.hash); broadcast(code,"room_updated",{room}); return; }
+      if(msg.type==="scenario_ready") { const room=rooms.setScenarioReady(code,playerId,msg.hash); await persistRooms(); broadcast(code,"room_updated",{room}); return; }
+      if(msg.type==="ready_for_turn") { const result=rooms.setReadyForTurn(code,playerId,msg.ready!==false); await persistRooms(); broadcast(code,"room_updated",{room:result.room}); if(result.allReady) broadcast(code,"all_players_ready",{turnNumber:result.room.turnNumber}); return; }
+      if(msg.type==="commit_turn") { const room=rooms.commitTurn(code,playerId,msg.state); await persistRooms(); broadcast(code,"turn_committed",{room,turnNumber:room.turnNumber}); broadcast(code,"room_updated",{room}); return; }
       if(msg.type==="diplomacy_history") {
         send(ws,"diplomacy_history",{threadId:String(msg.threadId||""),messages:rooms.diplomacyHistory(code,playerId,msg.threadId)});
         return;
@@ -88,7 +92,7 @@ wss.on("connection",ws => {
       }
       if(msg.type==="list_saves") { if(playerId!==rooms.snapshot(code).hostId || !session.ownerKey) throw new Error("HOST_ONLY"); send(ws,"saves",{saves:await saves.list(session.ownerKey)}); return; }
       if(msg.type==="save_game") { if(playerId!==rooms.snapshot(code).hostId || !session.ownerKey) throw new Error("HOST_ONLY"); const saved=await saves.save(session.ownerKey,msg.name,rooms.snapshot(code)); send(ws,"save_created",{save:saved,saves:await saves.list(session.ownerKey)}); return; }
-      if(msg.type==="load_save") { if(playerId!==rooms.snapshot(code).hostId || !session.ownerKey) throw new Error("HOST_ONLY"); const saved=await saves.get(session.ownerKey,String(msg.saveId||"")); const restored=rooms.restoreRoom(code,playerId,saved); broadcast(code,"room_updated",{room:restored}); return; }
+      if(msg.type==="load_save") { if(playerId!==rooms.snapshot(code).hostId || !session.ownerKey) throw new Error("HOST_ONLY"); const saved=await saves.get(session.ownerKey,String(msg.saveId||"")); const restored=rooms.restoreRoom(code,playerId,saved); await persistRooms(); broadcast(code,"room_updated",{room:restored}); return; }
       let room;
       if(msg.type==="configure_lobby") room=rooms.configureLobby(code,playerId,msg.config);
       else if(msg.type==="assign_country") room=rooms.assignCountry(code,playerId,msg.playerId,msg.countryId);
@@ -98,12 +102,20 @@ wss.on("connection",ws => {
       if (session.ownerKey && playerId === rooms.snapshot(code).hostId && ["configure_lobby","assign_country","start_game","update_state"].includes(msg.type)) {
         await saves.save(session.ownerKey,"Автосохранение",room);
       }
+      await persistRooms();
       broadcast(code,"room_updated",{room});
     } catch(error) { send(ws,"error",{code:error.message||"INTERNAL_ERROR"}); }
   });
-  ws.on("close",()=>{ const s=sessions.get(ws); if(!s)return; sessions.delete(ws); const room=rooms.disconnect(s.code,s.playerId); if(room)broadcast(s.code,"room_updated",{room}); });
+  ws.on("close",()=>{ const s=sessions.get(ws); if(!s)return; sessions.delete(ws); const room=rooms.disconnect(s.code,s.playerId); if(room){ void persistRooms(); broadcast(s.code,"room_updated",{room}); } });
 });
 const cleanup=setInterval(()=>rooms.removeExpiredPlayers(),15000); cleanup.unref();
-server.listen(PORT,"0.0.0.0",()=>console.log(`VPI15 multiplayer listening on :${PORT}`));
+Promise.all([saves.ready, saves.loadRooms()]).then(([, savedRooms]) => {
+  const restored = rooms.restore(savedRooms);
+  console.log(`Restored ${restored} multiplayer room(s) from persistent storage`);
+  server.listen(PORT,"0.0.0.0",()=>console.log(`VPI15 multiplayer listening on :${PORT}`));
+}).catch((error) => {
+  console.error("Multiplayer storage could not be loaded:", error);
+  process.exit(1);
+});
 function shutdown(){clearInterval(cleanup);for(const ws of wss.clients)ws.close(1001,"Server shutting down");server.close(()=>process.exit(0));setTimeout(()=>process.exit(1),10000).unref();}
 process.on("SIGTERM",shutdown); process.on("SIGINT",shutdown);
