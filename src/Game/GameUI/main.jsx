@@ -21,6 +21,7 @@ import { useWarRoom } from "../Map/warRoomStore.js";
 import { DISCORD_URL, GITHUB_URL, REDDIT_URL } from "../../runtime/communityLinks.js";
 import { useCountryDisplayName } from "../../runtime/polityNames.js";
 import { DateWidget } from "./time";
+import { MultiplayerStatusHud } from "./MultiplayerStatusHud.jsx";
 import { Other } from "./other";
 import { Toolbar } from "./chat";
 import MapModeSelector from "./MapModeSelector.jsx";
@@ -947,6 +948,7 @@ const Main = ({
             not before: at startup the menu above is all there is. */}
         {gameEntered && (
           <>
+            <MultiplayerStatusHud gameId={activeGame?.id} />
             <DateWidget
               activePanel={activeBottomPanel}
               mapRef={mapRef}
