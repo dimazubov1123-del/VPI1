@@ -2527,12 +2527,10 @@ const DateWidget = ({
                 if (actualHash !== room.turnStateHash) throw new Error("Контрольная сумма хода не совпала");
                 const bundle = JSON.parse(raw);
                 const localGame = getRuntimeValue("game");
-                if (bundle.game && JSON_URLS.game) await writeJson(JSON_URLS.game, { ...bundle.game, country: localGame?.country || session.country });
+                if (bundle.game && JSON_URLS.game) await writeJson(JSON_URLS.game, { ...bundle.game, id: localGame?.id || bundle.game.id, name: localGame?.name || bundle.game.name, country: localGame?.country || session.country });
                 if (Array.isArray(bundle.events) && JSON_URLS.events) await writeJson(JSON_URLS.events, bundle.events);
                 if (bundle.world && JSON_URLS.world) await writeJson(JSON_URLS.world, bundle.world);
                 if (Array.isArray(bundle.actions) && JSON_URLS.actions) await writeJson(JSON_URLS.actions, bundle.actions);
-                if (Array.isArray(bundle.chat) && JSON_URLS.chat) await writeJson(JSON_URLS.chat, bundle.chat);
-                if (bundle.intercepts && JSON_URLS.intercepts) await writeJson(JSON_URLS.intercepts, bundle.intercepts);
                 setMultiplayerSyncMessage("Ход " + room.turnNumber + " синхронизирован.");
             } catch (error) {
                 setMultiplayerSyncMessage("Не удалось получить ход: " + error.message);
@@ -3070,8 +3068,7 @@ const DateWidget = ({
             if (multiplayerSessionRef.current && multiplayerPlayerRef.current?.id === multiplayerRoomRef.current?.hostId) {
                 const bundle = {
                     game: result.game, events: result.events, world: result.world,
-                    actions: getRuntimeValue("actions"), chat: getRuntimeValue("chat"),
-                    intercepts: getRuntimeValue("intercepts"),
+                    actions: getRuntimeValue("actions"),
                 };
                 try {
                     const upload = await fetch("https://vpi15-multiplayer-production.up.railway.app/turn/" + encodeURIComponent(multiplayerSessionRef.current.room), {
