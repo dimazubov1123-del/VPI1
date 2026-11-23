@@ -2503,6 +2503,28 @@ const DateWidget = ({
         try { session = JSON.parse(localStorage.getItem("vpi15-mp-session") || "null"); } catch { session = null; }
         if (!session?.room || !session?.token || !session?.player) return undefined;
         multiplayerSessionRef.current = session;
+        const syncTurnSnapshot = async (room, player) => {
+            if (!room?.turnStateHash || player?.id === room.hostId) return;
+            try {
+                const response = await fetch("https://vpi15-multiplayer-production.up.railway.app/turn/" + encodeURIComponent(session.room), { cache: "no-store" });
+                if (!response.ok) throw new Error("HTTP " + response.status);
+                const raw = await response.text();
+                const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw));
+                const actualHash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+                if (actualHash !== room.turnStateHash) throw new Error("Контрольная сумма хода не совпала");
+                const bundle = JSON.parse(raw);
+                const localGame = getRuntimeValue("game");
+                if (bundle.game && JSON_URLS.game) await writeJson(JSON_URLS.game, { ...bundle.game, country: localGame?.country || session.country });
+                if (Array.isArray(bundle.events) && JSON_URLS.events) await writeJson(JSON_URLS.events, bundle.events);
+                if (bundle.world && JSON_URLS.world) await writeJson(JSON_URLS.world, bundle.world);
+                if (Array.isArray(bundle.actions) && JSON_URLS.actions) await writeJson(JSON_URLS.actions, bundle.actions);
+                if (Array.isArray(bundle.chat) && JSON_URLS.chat) await writeJson(JSON_URLS.chat, bundle.chat);
+                if (bundle.intercepts && JSON_URLS.intercepts) await writeJson(JSON_URLS.intercepts, bundle.intercepts);
+                setMultiplayerSyncMessage("Ход " + room.turnNumber + " синхронизирован.");
+            } catch (error) {
+                setMultiplayerSyncMessage("Не удалось получить ход: " + error.message);
+            }
+        };
         const connect = () => {
             if (disposed) return;
             socket = new WebSocket("wss://vpi15-multiplayer-production.up.railway.app/ws");
@@ -2519,6 +2541,7 @@ const DateWidget = ({
                     multiplayerPlayerRef.current = message.player;
                     multiplayerRoomRef.current = message.room;
                     setMultiplayerRoom(message.room);
+                    void syncTurnSnapshot(message.room, message.player);
                     return;
                 }
                 if (message.type === "room_updated" && message.room) {
@@ -2562,26 +2585,7 @@ const DateWidget = ({
                 if (message.type === "turn_committed" && message.room) {
                     multiplayerRoomRef.current = message.room;
                     setMultiplayerRoom(message.room);
-                    if (multiplayerPlayerRef.current?.id === message.room.hostId) return;
-                    try {
-                        const response = await fetch("https://vpi15-multiplayer-production.up.railway.app/turn/" + encodeURIComponent(session.room), { cache: "no-store" });
-                        if (!response.ok) throw new Error("HTTP " + response.status);
-                        const raw = await response.text();
-                        const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw));
-                        const actualHash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-                        if (actualHash !== message.room.turnStateHash) throw new Error("Контрольная сумма хода не совпала");
-                        const bundle = JSON.parse(raw);
-                        const localGame = getRuntimeValue("game");
-                        if (bundle.game && JSON_URLS.game) await writeJson(JSON_URLS.game, { ...bundle.game, country: localGame?.country || session.country });
-                        if (Array.isArray(bundle.events) && JSON_URLS.events) await writeJson(JSON_URLS.events, bundle.events);
-                        if (bundle.world && JSON_URLS.world) await writeJson(JSON_URLS.world, bundle.world);
-                        if (Array.isArray(bundle.actions) && JSON_URLS.actions) await writeJson(JSON_URLS.actions, bundle.actions);
-                        if (Array.isArray(bundle.chat) && JSON_URLS.chat) await writeJson(JSON_URLS.chat, bundle.chat);
-                        if (bundle.intercepts && JSON_URLS.intercepts) await writeJson(JSON_URLS.intercepts, bundle.intercepts);
-                        setMultiplayerSyncMessage("Ход " + message.turnNumber + " синхронизирован.");
-                    } catch (error) {
-                        setMultiplayerSyncMessage("Не удалось получить ход: " + error.message);
-                    }
+                    void syncTurnSnapshot(message.room, multiplayerPlayerRef.current);
                 }
             };
             socket.onerror = () => setMultiplayerConnected(false);
