@@ -96,15 +96,15 @@ function GameApp() {
           name: `${scenario?.name || "Сетевая партия"} — Multiplayer`,
           scenarioId,
           gamePatch: { country },
+          multiplayerSession: {
+            room,
+            country,
+            player: params.get("mpPlayer") || "",
+            token: params.get("mpToken") || "",
+            server: "wss://vpi15-multiplayer-production.up.railway.app/ws",
+          },
           setActive: true,
         });
-        localStorage.setItem("vpi15-multiplayer-session", JSON.stringify({
-          room,
-          country,
-          playerId: params.get("mpPlayer") || "",
-          reconnectToken: params.get("mpToken") || "",
-          server: "wss://vpi15-multiplayer-production.up.railway.app/ws",
-        }));
         if (live) {
           const clean = new URL(window.location.href);
           ["mpRoom", "mpHash", "mpCountry", "mpPlayer", "mpToken"].forEach((key) => clean.searchParams.delete(key));
