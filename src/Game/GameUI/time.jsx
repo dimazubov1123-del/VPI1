@@ -2867,6 +2867,25 @@ const DateWidget = ({
         if (!gameData || days == null || isLoading || jumpAbortRef.current) {
             return;
         }
+        if (multiplayerSessionRef.current) {
+            const room = multiplayerRoomRef.current;
+            const player = multiplayerPlayerRef.current;
+            if (!room || !player) {
+                setPanel("skip");
+                setError("Нет соединения с сетевой комнатой. Подождите переподключения.");
+                return;
+            }
+            if (player.id !== room.hostId) {
+                setPanel("skip");
+                setError("В сетевой партии ход рассчитывает хост. Отметьтесь кнопкой «Готов» и дождитесь синхронизации.");
+                return;
+            }
+            if (room.turnPhase !== "host_turn") {
+                setPanel("skip");
+                setError("Следующий ход закрыт: дождитесь готовности всех игроков.");
+                return;
+            }
+        }
         // What was being thought through ahead of time stops: the skip fights its own period now, and has whatever of
         // it was already thought through (AI/frontPrethink.js). Its length is the next one's to think through.
         stopFrontsPrethink();
@@ -2961,6 +2980,36 @@ const DateWidget = ({
             setGameData(result.game);
             setEvents(result.events);
             setWorldState(result.world);
+            if (multiplayerSessionRef.current && multiplayerPlayerRef.current?.id === multiplayerRoomRef.current?.hostId) {
+                const bundle = {
+                    game: result.game, events: result.events, world: result.world,
+                    actions: getRuntimeValue("actions"), chat: getRuntimeValue("chat"),
+                    intercepts: getRuntimeValue("intercepts"),
+                };
+                try {
+                    const upload = await fetch("https://vpi15-multiplayer-production.up.railway.app/turn/" + encodeURIComponent(multiplayerSessionRef.current.room), {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "X-Player-Id": multiplayerPlayerRef.current.id,
+                            "X-Reconnect-Token": multiplayerPlayerRef.current.reconnectToken || multiplayerSessionRef.current.token,
+                        },
+                        body: JSON.stringify(bundle),
+                    });
+                    const uploadResult = await upload.json();
+                    if (!upload.ok || !uploadResult.hash) throw new Error(uploadResult.error || ("HTTP " + upload.status));
+                    const socket = multiplayerSocketRef.current;
+                    if (!socket || socket.readyState !== WebSocket.OPEN) throw new Error("Соединение с сервером потеряно");
+                    socket.send(JSON.stringify({
+                        type: "commit_turn",
+                        state: { round: result.game?.round, gameDate: result.game?.gameDate, stateHash: uploadResult.hash },
+                    }));
+                    setMultiplayerSyncMessage("Ход отправлен всем участникам.");
+                } catch (syncError) {
+                    setMultiplayerSyncMessage("Ход рассчитан, но не синхронизирован: " + syncError.message);
+                    setError("Ход рассчитан на этом компьютере, но сервер не получил его. Не запускайте следующий ход, пока не восстановится связь. " + syncError.message);
+                }
+            }
             // While the player reads what came of it, the next period's land war is thought through (AI/frontPrethink.js).
             scheduleFrontsPrethink();
             const elapsed = `${Math.round((Date.now() - startedAt) / 1000)}s`;
