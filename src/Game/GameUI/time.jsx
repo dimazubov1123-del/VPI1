@@ -2500,7 +2500,15 @@ const DateWidget = ({
         let reconnectTimer = null;
         let attempts = 0;
         let session = null;
-        try { session = JSON.parse(localStorage.getItem("vpi15-mp-session") || "null"); } catch { session = null; }
+        try {
+            const rawSession = localStorage.getItem("vpi15-mp-session") || localStorage.getItem("vpi15-multiplayer-session") || "null";
+            const stored = JSON.parse(rawSession);
+            session = stored ? {
+                ...stored,
+                player: stored.player || stored.playerId,
+                token: stored.token || stored.reconnectToken,
+            } : null;
+        } catch { session = null; }
         if (!session?.room || !session?.token || !session?.player) return undefined;
         multiplayerSessionRef.current = session;
         const emitIncomingDiplomacy = (message) => {
@@ -2532,7 +2540,7 @@ const DateWidget = ({
         };
         const connect = () => {
             if (disposed) return;
-            socket = new WebSocket("wss://vpi15-multiplayer-production.up.railway.app/ws");
+            socket = new WebSocket(session.server || "wss://vpi15-multiplayer-production.up.railway.app/ws");
             multiplayerSocketRef.current = socket;
             socket.onopen = () => {
                 attempts = 0;
