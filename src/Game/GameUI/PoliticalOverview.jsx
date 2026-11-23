@@ -278,7 +278,7 @@ const PartyRow = ({ party, open, onToggle, legislatureSeats = 0, onHover = () =>
         )}
         {!party.isOther && (
           <div style={{ color: "rgba(255,255,255,0.5)", display: "flex", flexWrap: "wrap", fontSize: "0.62rem", gap: "0.15rem 0.7rem", marginTop: "0.2rem" }}>
-            {party.leader && <span>Leader: <span style={{ color: "rgba(255,255,255,0.8)" }}>{party.leader}</span></span>}
+            {party.leader && <span>Leader: <span style={{ color: "rgba(255,255,255,0.8)" }}>{russianPoliticalText(party.leader)}</span></span>}
             {seats !== null && <span>{seats}{legislatureSeats ? `/${legislatureSeats}` : ""} seats</span>}
             {Number.isFinite(party.support) && <span>{formatSupport(party.support)} support</span>}
             {party.supportApproximate && <span style={{ color: "rgba(253,230,138,0.62)", fontSize: "0.54rem", textTransform: "uppercase" }}>Approximate</span>}
@@ -520,7 +520,7 @@ const InstitutionPortfolio = ({ rows = [] }) => {
               <div className="oh-country-institution-main">
                 <div className="oh-country-institution-name" data-no-translate>{russianPoliticalText(institution.name || institution.id)}</div>
                 <div className="oh-country-institution-meta">
-                  {[entry?.member?.sinceDate ? `since ${(formatGameDateReadable(entry.member.sinceDate) || entry.member.sinceDate)}` : "", pending.length ? `${pending.length} pending lifecycle matter${pending.length === 1 ? "" : "s"}` : "", recent?.date && !entry?.member ? `last change ${(formatGameDateReadable(recent.date) || recent.date)}` : ""].filter(Boolean).join(" · ") || russianPoliticalText(institution.kind || "institution"))}
+                  {[entry?.member?.sinceDate ? `since ${(formatGameDateReadable(entry.member.sinceDate) || entry.member.sinceDate)}` : "", pending.length ? `${pending.length} pending lifecycle matter${pending.length === 1 ? "" : "s"}` : "", recent?.date && !entry?.member ? `last change ${(formatGameDateReadable(recent.date) || recent.date)}` : ""].filter(Boolean).join(" · ") || russianPoliticalText(institution.kind || "institution")}
                 </div>
                 {pending.slice(0, 2).map((item) => (
                   <div key={item.id} className="oh-country-institution-pending">• {item.kind} · {item.status}{item.requestedStatus ? ` · ${item.requestedStatus}` : ""}</div>
