@@ -536,18 +536,33 @@ export const loadGameDetails = async (gameId) =>
   requestJson(`${GAMES_API_ROOT}/${encodeURIComponent(gameId)}`);
 
 export const createGame = async (payload) => {
-  announceGameOpening(payload?.scenarioId ?? payload?.id ?? "");
+  const multiplayerSession = payload?.multiplayerSession || null;
+  const gamePayload = { ...(payload || {}) };
+  delete gamePayload.multiplayerSession;
+  announceGameOpening(gamePayload?.scenarioId ?? gamePayload?.id ?? "");
   const details = await requestJson(GAMES_API_ROOT, {
-    body: payload,
+    body: gamePayload,
     method: "POST",
   });
-  logDebugEvent("game", `New game created: "${payload?.name || details?.id || "untitled"}".`, {
-    scenarioId: payload?.scenarioId || "",
-    country: payload?.gamePatch?.country || payload?.country || "",
-    difficulty: payload?.gamePatch?.difficulty || payload?.difficulty || "",
+  try {
+    if (multiplayerSession && details?.id) {
+      const session = { ...multiplayerSession, gameId: details.id };
+      localStorage.setItem("vpi15-mp-session", JSON.stringify(session));
+      localStorage.setItem(`vpi15-mp-session:${details.id}`, JSON.stringify(session));
+      localStorage.removeItem("vpi15-multiplayer-session");
+    } else {
+      localStorage.removeItem("vpi15-mp-session");
+      localStorage.removeItem("vpi15-multiplayer-session");
+    }
+    localStorage.removeItem("vpi15-mp-room");
+  } catch { /* Private browsing may disable local storage. */ }
+  logDebugEvent("game", `New game created: "${gamePayload?.name || details?.id || "untitled"}".`, {
+    scenarioId: gamePayload?.scenarioId || "",
+    country: gamePayload?.gamePatch?.country || gamePayload?.country || "",
+    difficulty: gamePayload?.gamePatch?.difficulty || gamePayload?.difficulty || "",
   });
   // Card text edits translate (and reach the server language pack) right away.
-  enqueueContentStrings(payload);
+  enqueueContentStrings(gamePayload);
   await refreshLibraryCatalog({ force: true });
   // A game made to be played at once (a new game, a clone, Apply & Play) is
   // the game the player opened: entered once the library holds it as the
@@ -569,6 +584,13 @@ export const saveGame = async (gameId, payload, { refresh = true } = {}) => {
 };
 
 export const activateGame = async (gameId) => {
+  try {
+    const savedSession = localStorage.getItem(`vpi15-mp-session:${gameId}`);
+    if (savedSession) localStorage.setItem("vpi15-mp-session", savedSession);
+    else localStorage.removeItem("vpi15-mp-session");
+    localStorage.removeItem("vpi15-multiplayer-session");
+    localStorage.removeItem("vpi15-mp-room");
+  } catch { /* Private browsing may disable local storage. */ }
   // The loading screen comes up now, not when the new UI mounts a round trip
   // later (GameUI/gameLoadingScreen.jsx).
   announceGameOpening(gameId);
