@@ -512,7 +512,7 @@ const ScenarioDetail = ({ post, busy, onImport, onPlay, onBack, notice, error, t
             padding: "0.8rem 1.6rem",
           }}
         >
-          {busy ? "Importing…" : "▶ Import & Play"}
+          {busy ? "Downloading & importing…" : "▶ Import & Play"}
         </button>
       )}
       {library.copy && onPlay && (
