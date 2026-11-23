@@ -422,9 +422,14 @@ const Main = ({
       } catch { /* The next settings change or campaign reload retries. */ }
     };
     void sync();
+    const timer = window.setInterval(() => { if (!stopped) void sync(); }, 20000);
     const onAiChanged = () => { if (!stopped) void sync(); };
     window.addEventListener("ai:fallback-changed", onAiChanged);
-    return () => { stopped = true; window.removeEventListener("ai:fallback-changed", onAiChanged); };
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+      window.removeEventListener("ai:fallback-changed", onAiChanged);
+    };
   }, [activeGame?.id, gameEntered]);
 
   // A lobby returns every ready player here with the same scenario bundle
@@ -466,13 +471,18 @@ const Main = ({
         const multiplayerServer = "https://vpi15-multiplayer-production.up.railway.app";
         let aiConfig = null;
         if (role === "player") {
-          const aiResponse = await fetch(`${multiplayerServer}/ai-config/${encodeURIComponent(room)}`, {
-            cache: "no-store",
-            headers: { "X-Player-Id": player, "X-Reconnect-Token": token },
-          });
-          if (!aiResponse.ok) throw new Error(aiResponse.status === 404
+          let aiResponse = null;
+          for (let attempt = 0; attempt < 8; attempt += 1) {
+            aiResponse = await fetch(`${multiplayerServer}/ai-config/${encodeURIComponent(room)}`, {
+              cache: "no-store",
+              headers: { "X-Player-Id": player, "X-Reconnect-Token": token },
+            });
+            if (aiResponse.ok || aiResponse.status !== 404) break;
+            await new Promise((resolve) => window.setTimeout(resolve, 750));
+          }
+          if (!aiResponse?.ok) throw new Error(aiResponse?.status === 404
             ? "Хост ещё не подключил ИИ в настройках основной игры. Попросите хоста переподключиться."
-            : `Не удалось получить настройки ИИ хоста (HTTP ${aiResponse.status}).`);
+            : `Не удалось получить настройки ИИ хоста (HTTP ${aiResponse?.status || "нет связи"}).`);
           aiConfig = await aiResponse.json();
         }
         const library = getLibraryState();
