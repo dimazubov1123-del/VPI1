@@ -189,9 +189,6 @@
     }
   },
   "overrides": {
-    "@huggingface/transformers": {
-      "onnxruntime-web": "1.22.0"
-    },
     "react-map-gl": {
       "maplibre-gl": "$maplibre-gl"
     }
