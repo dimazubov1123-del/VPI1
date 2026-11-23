@@ -1152,6 +1152,12 @@ export function resolveTaskFallbackEntries(taskKey, sourceEntries = null) {
     const entries = Array.isArray(sourceEntries) ? [...sourceEntries] : getResolvedFallbackList();
     if (!key || entries.length === 0) return { entries, preferredEntryId: "", implicit: false };
 
+    // In a multiplayer campaign the host's endpoint is authoritative for every
+    // task, even when a participant had saved per-task model picks locally.
+    if (multiplayerAiOverride?.endpoint && entries.some((entry) => entry.id === "multiplayer-shared-ai")) {
+        return { entries, preferredEntryId: "multiplayer-shared-ai", implicit: true };
+    }
+
     const explicitPick = getTaskPick(key);
     if (explicitPick && entries.some((entry) => entry.id === explicitPick)) {
         return { entries, preferredEntryId: explicitPick, implicit: false };
