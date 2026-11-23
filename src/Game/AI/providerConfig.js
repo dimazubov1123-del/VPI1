@@ -671,8 +671,18 @@ export function getFallbackList() {
 // campaign. Credentials are sent only to the multiplayer server over WSS and
 // are never included in the public room snapshot.
 export function getMultiplayerAiConfig() {
-    const connections = getConnections()
-        .filter((connection) => connection.provider !== AGENT_PROVIDER && String(connection.apiKey ?? "").trim());
+    const connections = getConnections().filter((connection) => {
+        if (connection.provider === AGENT_PROVIDER || !String(connection.apiKey ?? "").trim()) return false;
+        if (!["openai-compatible", "anthropic-compatible"].includes(connection.provider)) return true;
+        try {
+            const endpoint = new URL(String(connection.endpoint || ""));
+            const host = endpoint.hostname.toLowerCase();
+            return ["http:", "https:"].includes(endpoint.protocol)
+                && !["localhost", "127.0.0.1", "::1"].includes(host)
+                && !/^10\\./.test(host) && !/^192\\.168\\./.test(host)
+                && !/^172\\.(1[6-9]|2[0-9]|3[01])\\./.test(host);
+        } catch { return false; }
+    });
     const allowed = new Set(connections.map((connection) => connection.id));
     const fallbackList = getFallbackList().filter((entry) => allowed.has(entry.connectionId));
     const entryIds = new Set(fallbackList.map((entry) => entry.id));
