@@ -685,11 +685,13 @@ export function getMultiplayerAiConfig() {
     });
     const allowed = new Set(connections.map((connection) => connection.id));
     const fallbackList = getFallbackList().filter((entry) => allowed.has(entry.connectionId));
+    const usedConnections = new Set(fallbackList.map((entry) => entry.connectionId));
+    const sharedConnections = connections.filter((connection) => usedConnections.has(connection.id));
     const entryIds = new Set(fallbackList.map((entry) => entry.id));
     const storedPicks = readJsonSetting(TASK_PICKS_KEY, {});
     const taskPicks = Object.fromEntries(Object.entries(storedPicks && typeof storedPicks === "object" ? storedPicks : {})
         .filter(([, entryId]) => entryIds.has(entryId)));
-    return { connections, fallbackList, taskPicks };
+    return { connections: sharedConnections, fallbackList, taskPicks };
 }
 
 // "gemini-3.5-flash (Main Google)": how an entry is named in notices, logs and
