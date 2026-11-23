@@ -39,3 +39,35 @@ test("requires every player to download and verify the uploaded scenario before 
  manager.setScenarioReady(host.room.code,guest.player.id,hash);
  assert.equal(manager.startGame(host.room.code,host.player.id).status,"playing");
 });
+
+
+test("persists and restores room credentials, scenario, country assignments and current game state", () => {
+ const {manager}=setup(); const {host,guest}=readyRoom(manager); const hash="b".repeat(64);
+ manager.setScenarioBundle(host.room.code,host.player.id,hash);
+ manager.setScenarioReady(host.room.code,host.player.id,hash);
+ manager.setScenarioReady(host.room.code,guest.player.id,hash);
+ manager.startGame(host.room.code,host.player.id,{round:4,gameDate:"2000-01-01"});
+ const dumped=manager.dump();
+ const restored=new RoomManager({now:()=>2000,codeFactory:()=>"ROOMX1",tokenFactory:()=>"unused"});
+ assert.equal(restored.restore(dumped),1);
+ const room=restored.snapshot(host.room.code);
+ assert.equal(room.status,"playing");
+ assert.equal(room.state.round,4);
+ assert.equal(room.players.find(p=>p.id===guest.player.id).countryId,"USA");
+ assert.equal(restored.joinRoom(host.room.code,"Хозяин",host.player.reconnectToken).reconnected,true);
+});
+test("holds the next turn until every player is ready and only host commits it", () => {
+ const {manager}=setup(); const {host,guest}=readyRoom(manager); const hash="c".repeat(64);
+ manager.setScenarioBundle(host.room.code,host.player.id,hash);
+ manager.setScenarioReady(host.room.code,host.player.id,hash);
+ manager.setScenarioReady(host.room.code,guest.player.id,hash);
+ manager.startGame(host.room.code,host.player.id,{round:1});
+ assert.equal(manager.setReadyForTurn(host.room.code,host.player.id,true).allReady,false);
+ assert.throws(()=>manager.commitTurn(host.room.code,host.player.id,{round:2}),/PLAYERS_NOT_READY/);
+ assert.equal(manager.setReadyForTurn(host.room.code,guest.player.id,true).allReady,true);
+ assert.throws(()=>manager.commitTurn(host.room.code,guest.player.id,{round:2}),/HOST_ONLY/);
+ const committed=manager.commitTurn(host.room.code,host.player.id,{round:2});
+ assert.equal(committed.turnNumber,2);
+ assert.equal(committed.turnPhase,"waiting");
+ assert.ok(committed.players.every(player=>!player.readyForTurn));
+});
