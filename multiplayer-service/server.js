@@ -34,10 +34,10 @@ async function readJsonRequest(req, maxBytes) {
 }
 
 function isPublicAiHostname(value) {
-  const host = String(value || "").toLowerCase().replace(/^\\[|\\]$/g, "");
+  const host = String(value || "").toLowerCase().replace(/^\[|\]$/g, "");
   if (!host || host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal") || host.includes(":")) return false;
   const parts = host.split(".");
-  if (parts.length === 4 && parts.every((part) => /^\\d+$/.test(part))) {
+  if (parts.length === 4 && parts.every((part) => /^\d+$/.test(part))) {
     const [a, b] = parts.map(Number);
     if (a === 0 || a === 10 || a === 127 || a >= 224
       || (a === 169 && b === 254)
