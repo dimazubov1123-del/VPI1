@@ -222,6 +222,10 @@ export class RoomManager {
     }
     return restored;
   }
+  turnInputsFor(code) {
+    const room = this.#requireRoom(code);
+    return [...(room.turnInputs?.values() || [])];
+  }
   snapshot(value) {
     const room = typeof value === "string" ? this.#requireRoom(value) : value;
     return { code: room.code, hostId: room.hostId, status: room.status, config: room.config, players: [...room.players.values()].map(({id,name,countryId,connected,readyForTurn}) => ({id,name,countryId,connected,readyForTurn:Boolean(readyForTurn)})), state: room.state, scenarioHash: room.scenarioHash || null, scenarioReady: [...(room.scenarioReady || [])], savedAssignments: room.savedAssignments || {}, turnNumber: room.turnNumber || 1, turnPhase: room.turnPhase || "lobby", turnStateHash: room.turnStateHash || null, createdAt: room.createdAt, updatedAt: room.updatedAt };
