@@ -29,7 +29,8 @@ function maybeReturnToGame(){
   target.searchParams.set("mpHash",room.scenarioHash);
   target.searchParams.set("mpCountry",player.countryId);
   target.searchParams.set("mpPlayer",me);
-  target.searchParams.set("mpToken",token||"");\n   const sharedAi=room.config?.settings?.ai||{};if(sharedAi.endpoint)target.searchParams.set("mpAiEndpoint",sharedAi.endpoint);if(sharedAi.model)target.searchParams.set("mpAiModel",sharedAi.model);
+  target.searchParams.set("mpToken",token||"");
+   const sharedAi=room.config?.settings?.ai||{};if(sharedAi.endpoint)target.searchParams.set("mpAiEndpoint",sharedAi.endpoint);if(sharedAi.model)target.searchParams.set("mpAiModel",sharedAi.model);
   location.replace(target.toString());
  }catch{showError("Неверная ссылка возврата в игру.");}
 }
