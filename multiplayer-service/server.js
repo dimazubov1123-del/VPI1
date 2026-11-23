@@ -109,7 +109,7 @@ wss.on("connection",ws => {
       const {code,playerId}=session;
       if(msg.type==="ping") { send(ws,"pong",{at:Date.now()}); return; }
       if(msg.type==="scenario_ready") { const room=rooms.setScenarioReady(code,playerId,msg.hash); await persistRooms(); broadcast(code,"room_updated",{room}); return; }
-      if(msg.type==="ready_for_turn") { const result=rooms.setReadyForTurn(code,playerId,msg.ready!==false); await persistRooms(); broadcast(code,"room_updated",{room:result.room}); if(result.allReady) broadcast(code,"all_players_ready",{turnNumber:result.room.turnNumber}); return; }
+      if(msg.type==="ready_for_turn") { const result=rooms.setReadyForTurn(code,playerId,msg.ready!==false,msg.inputs||null); await persistRooms(); broadcast(code,"room_updated",{room:result.room}); if(result.allReady) broadcast(code,"all_players_ready",{turnNumber:result.room.turnNumber,turnInputs:result.turnInputs}); return; }
       if(msg.type==="commit_turn") { const room=rooms.commitTurn(code,playerId,msg.state); await persistRooms(); broadcast(code,"turn_committed",{room,turnNumber:room.turnNumber}); broadcast(code,"room_updated",{room}); return; }
       if(msg.type==="diplomacy_history") {
         send(ws,"diplomacy_history",{threadId:String(msg.threadId||""),messages:rooms.diplomacyHistory(code,playerId,msg.threadId)});
