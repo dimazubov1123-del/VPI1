@@ -197,6 +197,11 @@ export default defineConfig(({ mode }) => ({
       '/api': 'http://localhost:3000',
     },
   },
+  // Railway's public edge uses a generated Host header. Vite preview rejects it
+  // with HTTP 403 unless preview hosts are explicitly allowed.
+  preview: {
+    allowedHosts: true,
+  },
   build: {
     rollupOptions: {
       output: {
