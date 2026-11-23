@@ -28,6 +28,7 @@ test("keeps AI-owned diplomacy on the AI path and rejects country impersonation"
  assert.throws(()=>manager.sendDiplomaticMessage(host.room.code,host.player.id,{fromCountry:"USA",toCountry:"FRA",threadId:"t",text:"spoof"}),/SENDER_COUNTRY_MISMATCH/);
 });
 
+test("authorizes only the host to upload a turn snapshot after the game starts",()=>{const {manager}=setup();const {host,guest}=readyRoom(manager);manager.startGame(host.room.code,host.player.id,{round:1});assert.equal(manager.isHostTurnToken(host.room.code,host.player.id,host.player.reconnectToken),true);assert.equal(manager.isHostTurnToken(host.room.code,guest.player.id,guest.player.reconnectToken),false);assert.equal(manager.isHostToken(host.room.code,host.player.id,host.player.reconnectToken),false);});
 test("requires every player to download and verify the uploaded scenario before starting",()=>{
  const {manager}=setup();const {host,guest}=configuredRoom(manager);const hash="a".repeat(64);
  assert.equal(manager.isHostToken(host.room.code,host.player.id,host.player.reconnectToken),true);

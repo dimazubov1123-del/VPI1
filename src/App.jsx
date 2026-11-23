@@ -20,8 +20,7 @@ import {
   createMenuStartupState,
   runStartupPreload,
 } from "./runtime/preload.js";
-import { createGame, ensureLibraryCatalog, getLibraryState, importScenarioBundle, loadScenarioDetails, useLibraryState } from "./runtime/library.js";
-import { findScenarioCopyOfBundle } from "./runtime/importedScenarioCopy.js";
+import { ensureLibraryCatalog, useLibraryState } from "./runtime/library.js";
 import { hasEnteredGame, useGameEntered } from "./runtime/gameEntry.js";
 import { VaultDoor } from "./Game/GameUI/VaultDoor.jsx";
 import { holdMusicBehindDoor } from "./runtime/ambientMusic.js";
@@ -68,56 +67,6 @@ class DoorFrame extends Component {
 
 function GameApp() {
   const mapRef = useRef(null);
-
-  const multiplayerLaunchRef = useRef(false);
-  useEffect(() => {
-    if (multiplayerLaunchRef.current || typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const room = params.get("mpRoom");
-    const expectedHash = params.get("mpHash");
-    const country = params.get("mpCountry");
-    if (!room || !expectedHash || !country) return;
-    multiplayerLaunchRef.current = true;
-    let live = true;
-    const launch = async () => {
-      try {
-        await ensureLibraryCatalog();
-        const response = await fetch(`https://vpi15-multiplayer-production.up.railway.app/scenario/${encodeURIComponent(room)}`, { cache: "no-store" });
-        if (!response.ok) throw new Error("Не удалось скачать сценарий сетевой партии с сервера.");
-        const raw = await response.text();
-        const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw));
-        const actualHash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-        if (actualHash !== expectedHash) throw new Error("Контрольная сумма сценария не совпала. Попросите хоста загрузить сценарий ещё раз.");
-        const bundle = JSON.parse(raw);
-        let scenarioId = await findScenarioCopyOfBundle(bundle, getLibraryState().scenarios, loadScenarioDetails);
-        if (!scenarioId) scenarioId = (await importScenarioBundle(bundle)).scenario.id;
-        const scenario = getLibraryState().scenarios.find((item) => item.id === scenarioId) || bundle.scenario;
-        await createGame({
-          name: `${scenario?.name || "Сетевая партия"} — Multiplayer`,
-          scenarioId,
-          gamePatch: { country },
-          multiplayerSession: {
-            room,
-            country,
-            player: params.get("mpPlayer") || "",
-            token: params.get("mpToken") || "",
-            server: "wss://vpi15-multiplayer-production.up.railway.app/ws",
-          },
-          setActive: true,
-        });
-        if (live) {
-          const clean = new URL(window.location.href);
-          ["mpRoom", "mpHash", "mpCountry", "mpPlayer", "mpToken"].forEach((key) => clean.searchParams.delete(key));
-          window.history.replaceState({}, "", clean.toString());
-        }
-      } catch (error) {
-        console.error("Multiplayer scenario launch failed:", error);
-        if (live) window.alert(error?.message || "Не удалось запустить сетевой сценарий.");
-      }
-    };
-    launch();
-    return () => { live = false; };
-  }, []);
 
   const worldIdleRef = useRef(false);
   const [startupState] = useState(createMenuStartupState);

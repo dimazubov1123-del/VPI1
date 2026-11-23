@@ -40,7 +40,7 @@ const server = createServer(async (req,res) => {
   if (turnMatch && req.method === "POST") {
     try {
       const code = turnMatch[1], playerId = String(req.headers["x-player-id"] || ""), token = String(req.headers["x-reconnect-token"] || "");
-      if (!rooms.isHostToken(code, playerId, token)) throw new Error("HOST_ONLY");
+      if (!rooms.isHostTurnToken(code, playerId, token)) throw new Error("HOST_ONLY");
       const chunks = []; let size = 0;
       for await (const chunk of req) { size += chunk.length; if (size > MAX_TURN_BYTES) throw new Error("TURN_STATE_TOO_LARGE"); chunks.push(chunk); }
       const raw = Buffer.concat(chunks), bundle = JSON.parse(raw.toString("utf8"));

@@ -34,6 +34,7 @@ export class RoomManager {
     return { room: this.snapshot(room), player: this.#credentials(player), reconnected: false };
   }
   isHostToken(code, playerId, token) { const room=this.rooms.get(String(code ?? "").toUpperCase()); const player=room?.players.get(String(playerId)); return Boolean(room && room.hostId===playerId && player?.token===token && room.status==="lobby"); }
+  isHostTurnToken(code, playerId, token) { const room=this.rooms.get(String(code ?? "").toUpperCase()); const player=room?.players.get(String(playerId)); return Boolean(room && room.hostId===playerId && player?.token===token && room.status==="playing"); }
   setScenarioBundle(code, playerId, hash) { const room=this.#requireRoom(code); this.#assertHost(room,playerId); if(room.status!=="lobby") throw new Error("GAME_ALREADY_STARTED"); room.scenarioHash=String(hash); room.scenarioReady=new Set(); room.updatedAt=this.now(); return this.snapshot(room); }
   setScenarioReady(code, playerId, hash) { const room=this.#requireRoom(code); if(room.status!=="lobby") throw new Error("GAME_ALREADY_STARTED"); if(!room.scenarioHash || hash!==room.scenarioHash) throw new Error("SCENARIO_HASH_MISMATCH"); if(!room.players.has(String(playerId))) throw new Error("PLAYER_NOT_FOUND"); room.scenarioReady ||= new Set(); room.scenarioReady.add(String(playerId)); room.updatedAt=this.now(); return this.snapshot(room); }
   configureLobby(code, playerId, config = {}) {
