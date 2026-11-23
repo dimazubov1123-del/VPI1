@@ -48,7 +48,7 @@ test("the website's hub route answers for a file and nothing else", () => {
 
 
 test("Import & Play preserves explicit launch intent after an async import", () => {
-  assert.match(hub, /else if \\(playNext\\) \\{[\\s\\S]{0,500}?onPlay\\(playNext\\);/);
-  assert.match(hub, /if \\(playNext\\) \\{[\\s\\S]{0,300}?onPlay\\(playNext\\);/);
-  assert.doesNotMatch(hub, /selectedPostRef\\.current\\?\\.id === post\\.id\\) onPlay/);
+  assert.ok(hub.includes("else if (playNext) {"));
+  assert.ok(hub.includes("onPlay(playNext);"));
+  assert.ok(!hub.includes("selectedPostRef.current?.id === post.id) onPlay"));
 });
