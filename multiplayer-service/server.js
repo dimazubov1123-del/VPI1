@@ -117,7 +117,7 @@ const server = createServer(async (req,res) => {
     return;
   }
 
-  const aiConfigMatch = pathname.match(/^\\/ai-config\\/([A-Z0-9]{6})$/);
+  const aiConfigMatch = pathname.match(/^\/ai-config\/([A-Z0-9]{6})$/);
   if (aiConfigMatch && (req.method === "GET" || req.method === "PUT")) {
     try {
       const code = aiConfigMatch[1], playerId = String(req.headers["x-player-id"] || ""), token = String(req.headers["x-reconnect-token"] || "");
