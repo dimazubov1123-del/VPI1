@@ -33,6 +33,21 @@ async function readJsonRequest(req, maxBytes) {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
+function isPublicAiHostname(value) {
+  const host = String(value || "").toLowerCase().replace(/^\\[|\\]$/g, "");
+  if (!host || host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal") || host.includes(":")) return false;
+  const parts = host.split(".");
+  if (parts.length === 4 && parts.every((part) => /^\\d+$/.test(part))) {
+    const [a, b] = parts.map(Number);
+    if (a === 0 || a === 10 || a === 127 || a >= 224
+      || (a === 169 && b === 254)
+      || (a === 172 && b >= 16 && b <= 31)
+      || (a === 192 && b === 168)
+      || (a === 100 && b >= 64 && b <= 127)) return false;
+  }
+  return true;
+}
+
 function validateAiConfig(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("INVALID_AI_CONFIG");
   const allowed = new Set(["gemini", "openai", "anthropic", "openai-compatible", "anthropic-compatible"]);
@@ -44,7 +59,7 @@ function validateAiConfig(value) {
     const endpoint = String(item?.endpoint || "").slice(0, 2048);
     if (["openai-compatible", "anthropic-compatible"].includes(provider)) {
       const parsed = new URL(endpoint);
-      if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error("INVALID_AI_ENDPOINT");
+      if (parsed.protocol !== "https:" || !isPublicAiHostname(parsed.hostname) || parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error("INVALID_AI_ENDPOINT");
     }
     return {
       id, provider, apiKey, endpoint,
