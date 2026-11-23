@@ -432,6 +432,37 @@ const Main = ({
     };
   }, [activeGame?.id, gameEntered]);
 
+  // Guests refresh the public host AI configuration, never the secret key.
+  // This also lets a host finish entering their key after the guests have
+  // already loaded the campaign, or recover after the Railway process restarts.
+  useEffect(() => {
+    if (!gameEntered || !activeGame?.id || typeof window === "undefined") return undefined;
+    let session = null;
+    try { session = JSON.parse(localStorage.getItem(`vpi15-mp-session:${activeGame.id}`) || "null"); } catch { session = null; }
+    if (session?.role !== "player" || !session.room || !session.player || !session.token) return undefined;
+    const base = String(session.server || "").replace(/^wss:/i, "https:").replace(/^ws:/i, "http:").replace(/\\/ws(?:\\/.*)?$/, "");
+    if (!base) return undefined;
+    let stopped = false;
+    const refresh = async () => {
+      try {
+        const response = await fetch(`${base}/ai-config/${encodeURIComponent(session.room)}`, {
+          cache: "no-store",
+          headers: { "X-Player-Id": session.player, "X-Reconnect-Token": session.token },
+        });
+        if (!response.ok || stopped) return;
+        const aiConfig = await response.json();
+        session = { ...session, aiConfig };
+        localStorage.setItem("vpi15-mp-session", JSON.stringify(session));
+        localStorage.setItem(`vpi15-mp-session:${activeGame.id}`, JSON.stringify(session));
+        setMultiplayerAiOverride(aiConfig);
+        setAiSetup(readAiSetup());
+      } catch { /* Keep the last known shared config until the next poll. */ }
+    };
+    void refresh();
+    const timer = window.setInterval(() => { if (!stopped) void refresh(); }, 15000);
+    return () => { stopped = true; window.clearInterval(timer); };
+  }, [activeGame?.id, gameEntered]);
+
   // A lobby returns every ready player here with the same scenario bundle
   // and their assigned country. Import it through the regular library API,
   // then use the exact same createGame path as single-player's Play button.
@@ -634,7 +665,10 @@ const Main = ({
     setApiPromptAnsweredFor(id);
     try { sessionStorage.setItem("oh:api-setup-answered", id); } catch { /* the prompt just shows again next time */ }
   };
+  let multiplayerRole = null;
+  try { multiplayerRole = JSON.parse(localStorage.getItem("vpi15-mp-session") || "null")?.role || null; } catch { multiplayerRole = null; }
   const showApiPrompt = loaded && Boolean(activeGame?.id) && !mainMenuOpen && !providerReady
+    && multiplayerRole !== "player"
     && apiPromptAnsweredFor !== String(activeGame?.id) && !isSettingsOpen && !showGameLoading;
 
   // Asked again while the warning is up. WebGL is refused for a moment while
