@@ -4072,11 +4072,12 @@ const ChatPanel = ({ isOpen, onClose, requestedCountry, requestedDraft = "", onC
     useEffect(() => {
         const onMultiplayerDiplomacy = (event) => {
             const message = event?.detail;
-            if (!message?.id || !message?.fromCountry || message.toCountry !== playerCountry || !message.text) return;
+            const myCountryCode = typeof playerCountry === "string" ? playerCountry : playerCountry?.code;
+            if (!message?.id || !message?.fromCountry || message.toCountry !== myCountryCode || !message.text) return;
             const sender = countries.find((entry) => entry.code === message.fromCountry)
                 || { code: message.fromCountry, name: message.fromCountry };
             const recipient = countries.find((entry) => entry.code === message.toCountry)
-                || { code: message.toCountry, name: playerCountry };
+                || { code: message.toCountry, name: myCountryCode };
             const threadId = String(message.threadId || "");
             const incoming = {
                 id: String(message.id),
