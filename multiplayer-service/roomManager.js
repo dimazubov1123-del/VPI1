@@ -167,11 +167,14 @@ export class RoomManager {
   }
   removeExpiredPlayers() {
     const now = this.now();
+    let changed = false;
     for (const [code, room] of this.rooms) {
-      for (const [id, player] of room.players) if (!player.connected && player.disconnectedAt !== null && now - player.disconnectedAt > this.disconnectGraceMs) room.players.delete(id);
-      if (!room.players.size) this.rooms.delete(code);
-      else if (!room.players.has(room.hostId)) { room.hostId = room.players.keys().next().value; room.updatedAt = now; }
+      if (room.recoveryGraceUntil && now < room.recoveryGraceUntil) continue;
+      for (const [id, player] of room.players) if (!player.connected && player.disconnectedAt !== null && now - player.disconnectedAt > this.disconnectGraceMs) { room.players.delete(id); changed = true; }
+      if (!room.players.size) { this.rooms.delete(code); changed = true; }
+      else if (!room.players.has(room.hostId)) { room.hostId = room.players.keys().next().value; room.updatedAt = now; changed = true; }
     }
+    return changed;
   }
   dump() {
     return [...this.rooms.values()].map((room) => ({
@@ -205,7 +208,7 @@ export class RoomManager {
         scenarioReady: new Set(Array.isArray(saved.scenarioReady) ? saved.scenarioReady : []),
         diplomacyMessages: Array.isArray(saved.diplomacyMessages) ? saved.diplomacyMessages.slice(-2000) : [],
         savedAssignments: saved.savedAssignments || {}, turnNumber: Number(saved.turnNumber) || 1,
-        turnPhase: "waiting", createdAt: Number(saved.createdAt) || this.now(), updatedAt: this.now(),
+        turnPhase: "waiting", recoveryGraceUntil: this.now() + 7 * 24 * 60 * 60 * 1000, createdAt: Number(saved.createdAt) || this.now(), updatedAt: this.now(),
       };
       this.rooms.set(room.code, room); restored += 1;
     }
