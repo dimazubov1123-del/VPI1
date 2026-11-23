@@ -81,7 +81,7 @@ export class AiConfigStore {
     } catch (error) {
       if (previous) this.configs.set(key, previous);
       else this.configs.delete(key);
-      throw error;
+      throw new Error("AI_CONFIG_STORE_WRITE_FAILED", { cause: error });
     }
     return true;
   }
@@ -96,7 +96,7 @@ export class AiConfigStore {
       await this.#persist();
     } catch (error) {
       this.configs.set(key, previous);
-      throw error;
+      throw new Error("AI_CONFIG_STORE_WRITE_FAILED", { cause: error });
     }
     return true;
   }
