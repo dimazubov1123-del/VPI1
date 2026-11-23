@@ -1661,7 +1661,8 @@ const ConversationView = ({ chat, playerCountry, gameDate, world = {}, onDelete,
             // diplomatic letter through the multiplayer room; every other
             // country continues through the existing AI diplomacy path.
             try {
-                const session = JSON.parse(localStorage.getItem("vpi15-mp-session") || "null");
+                const stored = JSON.parse(localStorage.getItem("vpi15-mp-session") || localStorage.getItem("vpi15-multiplayer-session") || "null");
+                const session = stored ? { ...stored, player: stored.player || stored.playerId, token: stored.token || stored.reconnectToken } : null;
                 const room = JSON.parse(localStorage.getItem("vpi15-mp-room") || "null");
                 const human = room?.players?.find((entry) =>
                     entry.countryId === country.code && entry.connected && entry.id !== session?.player
