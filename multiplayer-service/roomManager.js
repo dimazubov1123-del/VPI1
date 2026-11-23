@@ -15,7 +15,7 @@ export class RoomManager {
     let code;
     do { code = this.codeFactory(); } while (this.rooms.has(code));
     const player = this.#newPlayer(name);
-    const room = { code, hostId: player.id, players: new Map([[player.id, player]]), status: "lobby", config: { scenarioId: "", scenarioName: "", gameMode: "standard", settings: {} }, state: null, scenarioHash: null, scenarioReady: new Set(), diplomacyMessages: [], savedAssignments: {}, createdAt: this.now(), updatedAt: this.now() };
+    const room = { code, hostId: player.id, players: new Map([[player.id, player]]), status: "lobby", config: { scenarioId: "", scenarioName: "", gameMode: "standard", settings: {} }, state: null, scenarioHash: null, scenarioReady: new Set(), diplomacyMessages: [], savedAssignments: {}, turnNumber: 1, turnPhase: "lobby", createdAt: this.now(), updatedAt: this.now() };
     this.rooms.set(code, room);
     return { room: this.snapshot(room), player: this.#credentials(player) };
   }
@@ -62,6 +62,29 @@ export class RoomManager {
     room.updatedAt = this.now();
     return this.snapshot(room);
   }
+  setReadyForTurn(code, playerId, ready = true) {
+    const room = this.#requireRoom(code);
+    if (room.status !== "playing") throw new Error("GAME_NOT_STARTED");
+    const player = room.players.get(String(playerId));
+    if (!player) throw new Error("PLAYER_NOT_FOUND");
+    if (room.turnPhase === "host_turn") throw new Error("TURN_ALREADY_READY");
+    player.readyForTurn = Boolean(ready);
+    room.turnPhase = [...room.players.values()].every((entry) => entry.readyForTurn) ? "host_turn" : "waiting";
+    room.updatedAt = this.now();
+    return { room: this.snapshot(room), allReady: room.turnPhase === "host_turn" };
+  }
+  commitTurn(code, playerId, state) {
+    const room = this.#requireRoom(code);
+    this.#assertHost(room, playerId);
+    if (room.status !== "playing") throw new Error("GAME_NOT_STARTED");
+    if (room.turnPhase !== "host_turn") throw new Error("PLAYERS_NOT_READY");
+    room.state = this.#validateState(state);
+    room.turnNumber = Number(room.state?.round) || room.turnNumber + 1;
+    room.turnPhase = "waiting";
+    for (const player of room.players.values()) player.readyForTurn = false;
+    room.updatedAt = this.now();
+    return this.snapshot(room);
+  }
   startGame(code, playerId, state = null) {
     const room = this.#requireRoom(code);
     this.#assertHost(room, playerId);
@@ -70,7 +93,7 @@ export class RoomManager {
     if (!room.scenarioHash) throw new Error("SCENARIO_BUNDLE_REQUIRED");
     if ([...room.players.values()].some(p => !p.countryId)) throw new Error("COUNTRIES_NOT_ASSIGNED");
     if (room.scenarioHash && [...room.players.values()].some(p => !room.scenarioReady?.has(p.id))) throw new Error("SCENARIO_DOWNLOADS_PENDING");
-    room.status = "playing"; if (state != null) room.state = this.#validateState(state); room.updatedAt = this.now();
+    room.status = "playing"; if (state != null) room.state = this.#validateState(state); room.turnNumber = Number(room.state?.round) || 1; room.turnPhase = "waiting"; room.updatedAt = this.now();
     return this.snapshot(room);
   }
   restoreRoom(code, playerId, saved) {
@@ -150,11 +173,49 @@ export class RoomManager {
       else if (!room.players.has(room.hostId)) { room.hostId = room.players.keys().next().value; room.updatedAt = now; }
     }
   }
+  dump() {
+    return [...this.rooms.values()].map((room) => ({
+      code: room.code, hostId: room.hostId, status: room.status, config: room.config,
+      players: [...room.players.values()].map((player) => ({ ...player, connected: false, disconnectedAt: this.now(), readyForTurn: false })),
+      state: room.state, scenarioHash: room.scenarioHash || null, scenarioReady: [...(room.scenarioReady || [])],
+      diplomacyMessages: room.diplomacyMessages || [], savedAssignments: room.savedAssignments || {},
+      turnNumber: room.turnNumber || 1, turnPhase: "waiting", createdAt: room.createdAt, updatedAt: room.updatedAt,
+    }));
+  }
+  restore(records) {
+    if (!Array.isArray(records)) return 0;
+    let restored = 0;
+    for (const saved of records) {
+      if (!saved || !/^[A-Z0-9]{6}$/.test(String(saved.code || "")) || !Array.isArray(saved.players) || !saved.players.length) continue;
+      const players = new Map();
+      for (const entry of saved.players) {
+        if (!entry?.id || !entry?.token) continue;
+        players.set(String(entry.id), {
+          id: String(entry.id), token: String(entry.token), name: cleanName(entry.name),
+          countryId: entry.countryId ? cleanText(entry.countryId, 80) : null,
+          connected: false, disconnectedAt: this.now(), readyForTurn: false,
+        });
+      }
+      if (!players.size) continue;
+      const hostId = players.has(saved.hostId) ? saved.hostId : players.keys().next().value;
+      const room = {
+        code: saved.code, hostId, players, status: saved.status === "playing" ? "playing" : "lobby",
+        config: this.#validateState(saved.config || { scenarioId: "", scenarioName: "", gameMode: "standard", settings: {} }),
+        state: this.#validateState(saved.state ?? null), scenarioHash: saved.scenarioHash || null,
+        scenarioReady: new Set(Array.isArray(saved.scenarioReady) ? saved.scenarioReady : []),
+        diplomacyMessages: Array.isArray(saved.diplomacyMessages) ? saved.diplomacyMessages.slice(-2000) : [],
+        savedAssignments: saved.savedAssignments || {}, turnNumber: Number(saved.turnNumber) || 1,
+        turnPhase: "waiting", createdAt: Number(saved.createdAt) || this.now(), updatedAt: this.now(),
+      };
+      this.rooms.set(room.code, room); restored += 1;
+    }
+    return restored;
+  }
   snapshot(value) {
     const room = typeof value === "string" ? this.#requireRoom(value) : value;
-    return { code: room.code, hostId: room.hostId, status: room.status, config: room.config, players: [...room.players.values()].map(({id,name,countryId,connected}) => ({id,name,countryId,connected})), state: room.state, scenarioHash: room.scenarioHash || null, scenarioReady: [...(room.scenarioReady || [])], savedAssignments: room.savedAssignments || {}, createdAt: room.createdAt, updatedAt: room.updatedAt };
+    return { code: room.code, hostId: room.hostId, status: room.status, config: room.config, players: [...room.players.values()].map(({id,name,countryId,connected,readyForTurn}) => ({id,name,countryId,connected,readyForTurn:Boolean(readyForTurn)})), state: room.state, scenarioHash: room.scenarioHash || null, scenarioReady: [...(room.scenarioReady || [])], savedAssignments: room.savedAssignments || {}, turnNumber: room.turnNumber || 1, turnPhase: room.turnPhase || "lobby", createdAt: room.createdAt, updatedAt: room.updatedAt };
   }
-  #newPlayer(name) { return { id: randomBytes(12).toString("hex"), token: this.tokenFactory(), name: cleanName(name), countryId: null, connected: true, disconnectedAt: null }; }
+  #newPlayer(name) { return { id: randomBytes(12).toString("hex"), token: this.tokenFactory(), name: cleanName(name), countryId: null, connected: true, disconnectedAt: null, readyForTurn: false }; }
   #credentials(player) { return { id: player.id, reconnectToken: player.token }; }
   #assertHost(room, playerId) { if (room.hostId !== playerId) throw new Error("HOST_ONLY"); }
   #requireRoom(code) { const room = this.rooms.get(String(code ?? "").toUpperCase()); if (!room) throw new Error("ROOM_NOT_FOUND"); return room; }
