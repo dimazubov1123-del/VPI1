@@ -520,7 +520,16 @@ const InstitutionPortfolio = ({ rows = [] }) => {
               <div className="oh-country-institution-main">
                 <div className="oh-country-institution-name" data-no-translate>{russianPoliticalText(institution.name || institution.id)}</div>
                 <div className="oh-country-institution-meta">
-                  {[entry?.member?.sinceDate ? `since ${(formatGameDateReadable(entry.member.sinceDate) || entry.member.sinceDate)}` : "", pending.length ? `${pending.length} pending lifecycle matter${pending.length === 1 ? "" : "s"}` : "", recent?.date && !entry?.member ? `last change ${(formatGameDateReadable(recent.date) || recent.date)}` : ""].filter(Boolean).join(" · ") || russianPoliticalText(institution.kind || "institution")}
+                  {(() => {
+                    const ru = typeof document !== "undefined" && document.documentElement?.lang?.toLowerCase().startsWith("ru");
+                    const since = entry?.member?.sinceDate ? (formatGameDateReadable(entry.member.sinceDate) || entry.member.sinceDate) : "";
+                    const changed = recent?.date && !entry?.member ? (formatGameDateReadable(recent.date) || recent.date) : "";
+                    return [
+                      since ? `${ru ? "с" : "since"} ${since}` : "",
+                      pending.length ? (ru ? `на рассмотрении: ${pending.length} вопрос(а) о членстве` : `${pending.length} pending lifecycle matter${pending.length === 1 ? "" : "s"}`) : "",
+                      changed ? `${ru ? "последнее изменение" : "last change"} ${changed}` : "",
+                    ].filter(Boolean).join(" · ") || russianPoliticalText(institution.kind || "institution");
+                  })()}
                 </div>
                 {pending.slice(0, 2).map((item) => (
                   <div key={item.id} className="oh-country-institution-pending">• {item.kind} · {item.status}{item.requestedStatus ? ` · ${item.requestedStatus}` : ""}</div>
