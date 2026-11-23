@@ -780,6 +780,7 @@ test("a multiplayer host endpoint is shared without replacing each player's loca
   assert.equal(shared.model, "shared-model");
   assert.equal(shared.apiKey, "PLAYER_LOCAL_KEY");
   assert.equal(fallback.endpoint, "http://localhost:1234/v1");
+  assert.equal(config.resolveTaskFallbackEntries("jumpForward").preferredEntryId, "multiplayer-shared-ai");
 
   config.setMultiplayerAiOverride(null);
   assert.equal(config.getResolvedFallbackList()[0].endpoint, "http://localhost:1234/v1");
