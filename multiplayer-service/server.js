@@ -93,7 +93,7 @@ const server = createServer(async (req,res) => {
   }
   res.writeHead(404,{"content-type":"application/json"}); res.end(JSON.stringify({error:"NOT_FOUND"}));
 });
-const wss = new WebSocketServer({server,path:"/ws",maxPayload:300*1024,verifyClient:({origin},done) => done(origins.length===0 || !origin || origins.includes(origin),403,"Origin not allowed")});
+const wss = new WebSocketServer({server,path:"/ws",maxPayload:3*1024*1024,verifyClient:({origin},done) => done(origins.length===0 || !origin || origins.includes(origin),403,"Origin not allowed")});
 const send = (ws,type,payload={}) => { if(ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify({type,...payload})); };
 const broadcast = (code,type,payload={}) => { for(const [ws,s] of sessions) if(s.code===code) send(ws,type,payload); };
 const attach = async (ws,result,ownerKey=null) => { sessions.set(ws,{code:result.room.code,playerId:result.player.id,ownerKey}); await persistRooms(); send(ws,"room",{room:result.room,player:result.player,reconnected:Boolean(result.reconnected)}); if(result.room.turnPhase==="host_turn") send(ws,"all_players_ready",{turnNumber:result.room.turnNumber,turnInputs:rooms.turnInputsFor(result.room.code)}); broadcast(result.room.code,"room_updated",{room:result.room}); };
