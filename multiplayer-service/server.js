@@ -14,14 +14,48 @@ const rooms = new RoomManager();
 const saves = new SaveStore();
 const persistRooms = async () => { try { await saves.saveRooms(rooms.dump()); } catch (error) { console.error("Could not persist multiplayer rooms:", error); } };
 const scenarioDir = process.env.SCENARIO_DIR || "/data/scenarios";
+const turnDir = process.env.TURN_DIR || "/data/turns";
 const MAX_SCENARIO_BYTES = 100 * 1024 * 1024;
+const MAX_TURN_BYTES = 100 * 1024 * 1024;
 const sessions = new Map();
 const server = createServer(async (req,res) => {
   const pathname = new URL(req.url || "/", "http://localhost").pathname;
   const corsHeaders = { "Access-Control-Allow-Origin": req.headers.origin || "*", "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, X-Player-Id, X-Reconnect-Token", "Vary": "Origin" };
-  if (pathname.startsWith("/scenario/") && req.method === "OPTIONS") { res.writeHead(204, corsHeaders); res.end(); return; }
+  if ((pathname.startsWith("/scenario/") || pathname.startsWith("/turn/")) && req.method === "OPTIONS") { res.writeHead(204, corsHeaders); res.end(); return; }
   if (pathname === "/health") { res.writeHead(200,{"content-type":"application/json","cache-control":"no-store"}); res.end(JSON.stringify({ok:true,service:"vpi15-multiplayer"})); return; }
 
+  const turnMatch = pathname.match(/^\/turn\/([A-Z0-9]{6})$/);
+  if (turnMatch && req.method === "GET") {
+    try {
+      const data = await readStoredFile(join(turnDir, `${turnMatch[1]}.json`));
+      const room = rooms.snapshot(turnMatch[1]);
+      res.writeHead(200, { ...corsHeaders, "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-turn-hash": room.turnStateHash || "" });
+      res.end(data);
+    } catch (error) {
+      res.writeHead(error.code === "ENOENT" ? 404 : 500, { ...corsHeaders, "content-type": "application/json" });
+      res.end(JSON.stringify({ error: error.code === "ENOENT" ? "TURN_STATE_NOT_FOUND" : "TURN_STATE_READ_FAILED" }));
+    }
+    return;
+  }
+  if (turnMatch && req.method === "POST") {
+    try {
+      const code = turnMatch[1], playerId = String(req.headers["x-player-id"] || ""), token = String(req.headers["x-reconnect-token"] || "");
+      if (!rooms.isHostToken(code, playerId, token)) throw new Error("HOST_ONLY");
+      const chunks = []; let size = 0;
+      for await (const chunk of req) { size += chunk.length; if (size > MAX_TURN_BYTES) throw new Error("TURN_STATE_TOO_LARGE"); chunks.push(chunk); }
+      const raw = Buffer.concat(chunks), bundle = JSON.parse(raw.toString("utf8"));
+      if (!bundle || typeof bundle !== "object" || Array.isArray(bundle) || !bundle.game || !bundle.world || !Array.isArray(bundle.events)) throw new Error("INVALID_TURN_STATE");
+      const hash = createHash("sha256").update(raw).digest("hex");
+      await mkdir(turnDir, { recursive: true });
+      const target = join(turnDir, `${code}.json`), temp = target + ".tmp";
+      await writeFile(temp, raw); await rename(temp, target);
+      res.writeHead(200, { ...corsHeaders, "content-type": "application/json" }); res.end(JSON.stringify({ ok: true, hash, bytes: size }));
+    } catch (error) {
+      const status = error.message === "TURN_STATE_TOO_LARGE" ? 413 : error.message === "HOST_ONLY" ? 403 : 400;
+      res.writeHead(status, { ...corsHeaders, "content-type": "application/json" }); res.end(JSON.stringify({ error: error.message || "TURN_STATE_UPLOAD_FAILED" }));
+    }
+    return;
+  }
   const scenarioMatch = pathname.match(/^\/scenario\/([A-Z0-9]{6})$/);
   if (scenarioMatch && req.method === "GET") {
     try { const data = await readStoredFile(join(scenarioDir, `${scenarioMatch[1]}.json`)); res.writeHead(200, { ...corsHeaders, "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }); res.end(data); }
