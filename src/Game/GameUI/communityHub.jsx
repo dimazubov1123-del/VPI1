@@ -770,7 +770,12 @@ const CommunityPanel = ({ fullPage = false, onPlay }) => {
       // offer; one with several lists them.
       if (detailedCount === 1 && mapsToOffer.length === 1 && mapsToOffer[0].starting) setMissingMap({ basemap: mapsToOffer[0], postId: post.id, playNext });
       else if (mapsToOffer.length) setMissingMap({ basemaps: mapsToOffer, postId: post.id, playNext });
-      else if (playNext && selectedPostRef.current?.id === post.id) onPlay?.(playNext);
+      else if (playNext) {
+        // Import & Play is an explicit launch request. Preserve it across the
+        // async download/import even if the player changes the selected post.
+        if (typeof onPlay !== "function") throw new Error("The game could not open the imported scenario. Start it from the Scenarios tab instead.");
+        onPlay(playNext);
+      }
     } catch (nextError) {
       const stillRelevant = !selectedPostRef.current || selectedPostRef.current.id === post.id;
       if (stillRelevant) {
@@ -900,7 +905,13 @@ const CommunityPanel = ({ fullPage = false, onPlay }) => {
   const finishInstall = () => {
     const { postId, playNext } = missingMap;
     setMissingMap(null);
-    if (playNext && selectedPostRef.current?.id === postId) onPlay?.(playNext);
+    if (playNext) {
+      if (typeof onPlay !== "function") {
+        setError("The game could not open the imported scenario. Start it from the Scenarios tab instead.");
+        return;
+      }
+      onPlay(playNext);
+    }
   };
 
   return (
