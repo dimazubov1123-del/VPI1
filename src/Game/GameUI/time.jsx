@@ -2503,6 +2503,11 @@ const DateWidget = ({
         try { session = JSON.parse(localStorage.getItem("vpi15-mp-session") || "null"); } catch { session = null; }
         if (!session?.room || !session?.token || !session?.player) return undefined;
         multiplayerSessionRef.current = session;
+        const emitIncomingDiplomacy = (message) => {
+            if (typeof window !== "undefined" && message) {
+                window.dispatchEvent(new CustomEvent("vpi15:mp-diplomacy-incoming", { detail: message }));
+            }
+        };
         const syncTurnSnapshot = async (room, player) => {
             if (!room?.turnStateHash || player?.id === room.hostId) return;
             try {
@@ -2541,17 +2546,35 @@ const DateWidget = ({
                     multiplayerPlayerRef.current = message.player;
                     multiplayerRoomRef.current = message.room;
                     setMultiplayerRoom(message.room);
+                    try { localStorage.setItem("vpi15-mp-room", JSON.stringify(message.room)); } catch {}
+                    for (const peer of (message.room.players || [])) {
+                        if (peer.id === message.player.id || !peer.countryId || !session.country) continue;
+                        const pair = [session.country, peer.countryId].sort();
+                        socket.send(JSON.stringify({ type: "diplomacy_history", threadId: "mp:" + pair.join(":") }));
+                    }
                     void syncTurnSnapshot(message.room, message.player);
                     return;
                 }
                 if (message.type === "room_updated" && message.room) {
                     multiplayerRoomRef.current = message.room;
                     setMultiplayerRoom(message.room);
+                    try { localStorage.setItem("vpi15-mp-room", JSON.stringify(message.room)); } catch {}
                     if (message.room.turnPhase !== "host_turn") setMultiplayerInputsReady(false);
                     return;
                 }
                 if (message.type === "error") {
                     setMultiplayerSyncMessage("Сеть: " + (message.code || "ошибка"));
+                    return;
+                }
+                if (message.type === "diplomacy_message" && message.message) {
+                    emitIncomingDiplomacy(message.message);
+                    return;
+                }
+                if (message.type === "diplomacy_history") {
+                    const myId = multiplayerPlayerRef.current?.id;
+                    for (const entry of (message.messages || [])) {
+                        if (entry.toPlayerId === myId) emitIncomingDiplomacy(entry);
+                    }
                     return;
                 }
                 if (message.type === "all_players_ready") {
@@ -2596,8 +2619,23 @@ const DateWidget = ({
                 reconnectTimer = window.setTimeout(connect, Math.min(15000, 1000 * (2 ** Math.min(attempts, 4))));
             };
         };
+        const onDiplomacySend = (event) => {
+            const detail = event?.detail || {};
+            const socket = multiplayerSocketRef.current;
+            if (!detail.toCountry || !detail.threadId || !detail.text || !socket || socket.readyState !== WebSocket.OPEN) return;
+            socket.send(JSON.stringify({
+                type: "diplomacy_message",
+                fromCountry: session.country,
+                toCountry: detail.toCountry,
+                threadId: detail.threadId,
+                text: detail.text,
+                clientMessageId: detail.clientMessageId || null,
+            }));
+        };
+        window.addEventListener("vpi15:mp-diplomacy-send", onDiplomacySend);
         connect();
         return () => {
+            window.removeEventListener("vpi15:mp-diplomacy-send", onDiplomacySend);
             disposed = true;
             if (reconnectTimer) window.clearTimeout(reconnectTimer);
             if (socket && socket.readyState < WebSocket.CLOSING) socket.close();
