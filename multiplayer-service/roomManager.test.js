@@ -81,3 +81,17 @@ test("keeps restored rooms available for a week after a server restart", () => {
  assert.equal(restored.removeExpiredPlayers(),false);
  assert.equal(restored.snapshot(host.room.code).players.length,2);
 });
+
+
+test("commits a ready turn with a content hash for clients to download", () => {
+ const {manager}=setup(); const {host,guest}=readyRoom(manager); const hash="d".repeat(64);
+ manager.setScenarioBundle(host.room.code,host.player.id,hash);
+ manager.setScenarioReady(host.room.code,host.player.id,hash);
+ manager.setScenarioReady(host.room.code,guest.player.id,hash);
+ manager.startGame(host.room.code,host.player.id,{round:1});
+ manager.setReadyForTurn(host.room.code,host.player.id,true);
+ manager.setReadyForTurn(host.room.code,guest.player.id,true);
+ const committed=manager.commitTurn(host.room.code,host.player.id,{round:2,gameDate:"2000-02-01",stateHash:hash});
+ assert.equal(committed.turnStateHash,hash);
+ assert.equal(committed.turnNumber,2);
+});
