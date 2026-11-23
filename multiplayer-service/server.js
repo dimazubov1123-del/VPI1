@@ -62,15 +62,15 @@ const server = createServer(async (req,res) => {
 const wss = new WebSocketServer({server,path:"/ws",maxPayload:300*1024,verifyClient:({origin},done) => done(origins.length===0 || !origin || origins.includes(origin),403,"Origin not allowed")});
 const send = (ws,type,payload={}) => { if(ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify({type,...payload})); };
 const broadcast = (code,type,payload={}) => { for(const [ws,s] of sessions) if(s.code===code) send(ws,type,payload); };
-const attach = (ws,result,ownerKey=null) => { sessions.set(ws,{code:result.room.code,playerId:result.player.id,ownerKey}); send(ws,"room",{room:result.room,player:result.player,reconnected:Boolean(result.reconnected)}); broadcast(result.room.code,"room_updated",{room:result.room}); void persistRooms(); };
+const attach = async (ws,result,ownerKey=null) => { sessions.set(ws,{code:result.room.code,playerId:result.player.id,ownerKey}); await persistRooms(); send(ws,"room",{room:result.room,player:result.player,reconnected:Boolean(result.reconnected)}); broadcast(result.room.code,"room_updated",{room:result.room}); };
 wss.on("connection",ws => {
   ws.on("message",async raw => {
     try {
       const msg=JSON.parse(raw.toString());
       if(!msg || typeof msg.type!=="string") throw new Error("INVALID_MESSAGE");
       const session=sessions.get(ws);
-      if(msg.type==="create_room") { if(session) throw new Error("ALREADY_IN_ROOM"); const ownerKey=String(msg.ownerKey||"").slice(0,100); if(ownerKey.length<20) throw new Error("HOST_KEY_REQUIRED"); attach(ws,rooms.createRoom(msg.name),ownerKey); return; }
-      if(msg.type==="join_room") { if(session) throw new Error("ALREADY_IN_ROOM"); attach(ws,rooms.joinRoom(msg.code,msg.name,msg.reconnectToken),String(msg.ownerKey||"").slice(0,100)||null); return; }
+      if(msg.type==="create_room") { if(session) throw new Error("ALREADY_IN_ROOM"); const ownerKey=String(msg.ownerKey||"").slice(0,100); if(ownerKey.length<20) throw new Error("HOST_KEY_REQUIRED"); await attach(ws,rooms.createRoom(msg.name),ownerKey); return; }
+      if(msg.type==="join_room") { if(session) throw new Error("ALREADY_IN_ROOM"); await attach(ws,rooms.joinRoom(msg.code,msg.name,msg.reconnectToken),String(msg.ownerKey||"").slice(0,100)||null); return; }
       if(!session) throw new Error("NOT_IN_ROOM");
       const {code,playerId}=session;
       if(msg.type==="ping") { send(ws,"pong",{at:Date.now()}); return; }
@@ -84,6 +84,7 @@ wss.on("connection",ws => {
       if(msg.type==="diplomacy_message") {
         const result=rooms.sendDiplomaticMessage(code,playerId,msg);
         if(result.delivery==="ai") { send(ws,"diplomacy_delivery",{clientMessageId:msg.clientMessageId||null,delivery:"ai"}); return; }
+        await persistRooms();
         for(const [peer,peerSession] of sessions) {
           if(peerSession.code===code && peerSession.playerId===result.recipientPlayerId) send(peer,"diplomacy_message",{message:result.message});
         }
@@ -108,7 +109,7 @@ wss.on("connection",ws => {
   });
   ws.on("close",()=>{ const s=sessions.get(ws); if(!s)return; sessions.delete(ws); const room=rooms.disconnect(s.code,s.playerId); if(room){ void persistRooms(); broadcast(s.code,"room_updated",{room}); } });
 });
-const cleanup=setInterval(()=>rooms.removeExpiredPlayers(),15000); cleanup.unref();
+const cleanup=setInterval(()=>{ if(rooms.removeExpiredPlayers()) void persistRooms(); },15000); cleanup.unref();
 Promise.all([saves.ready, saves.loadRooms()]).then(([, savedRooms]) => {
   const restored = rooms.restore(savedRooms);
   console.log(`Restored ${restored} multiplayer room(s) from persistent storage`);
