@@ -263,7 +263,7 @@ wss.on("connection",ws => {
       const msg=JSON.parse(raw.toString());
       if(!msg || typeof msg.type!=="string") throw new Error("INVALID_MESSAGE");
       const session=sessions.get(ws);
-      if(msg.type==="create_room") { if(session) throw new Error("ALREADY_IN_ROOM"); const ownerKey=String(msg.ownerKey||"").slice(0,100); if(ownerKey.length<20) throw new Error("HOST_KEY_REQUIRED"); const created=rooms.createRoom(msg.name); if(msg.aiConfig) aiConfigs.set(created.room.code,validateAiConfig(msg.aiConfig)); await attach(ws,created,ownerKey); return; }
+      if(msg.type==="create_room") { if(session) throw new Error("ALREADY_IN_ROOM"); const ownerKey=String(msg.ownerKey||"").slice(0,100); if(ownerKey.length<20) throw new Error("HOST_KEY_REQUIRED"); const aiConfig=msg.aiConfig ? validateAiConfig(msg.aiConfig) : null; const created=rooms.createRoom(msg.name); if(aiConfig) aiConfigs.set(created.room.code,aiConfig); await attach(ws,created,ownerKey); return; }
       if(msg.type==="join_room") { if(session) throw new Error("ALREADY_IN_ROOM"); await attach(ws,rooms.joinRoom(msg.code,msg.name,msg.reconnectToken),String(msg.ownerKey||"").slice(0,100)||null); return; }
       if(!session) throw new Error("NOT_IN_ROOM");
       const {code,playerId}=session;
