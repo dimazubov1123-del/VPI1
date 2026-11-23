@@ -4246,7 +4246,7 @@ const DateWidget = ({
             className="oh-tap"
             title={multiplayerConnected ? "Готовность к следующему ходу" : "Нет соединения с сервером"}
             aria-label="Готовность к следующему ходу"
-            disabled={!multiplayerConnected || multiplayerRoom.turnPhase === "host_turn"}
+            disabled={!multiplayerConnected}
             onClick={() => {
                 const player = multiplayerPlayerRef.current;
                 const room = multiplayerRoomRef.current;
@@ -4268,7 +4268,7 @@ const DateWidget = ({
                 opacity: multiplayerConnected ? 1 : 0.45,
             }}
             >
-            {multiplayerRoom.turnPhase === "host_turn" ? "ВСЕ ГОТОВЫ" :
+            {multiplayerRoom.turnPhase === "host_turn" ? "ОТМЕНИТЬ" :
                 multiplayerRoom.players?.find((entry) => entry.id === multiplayerPlayerRef.current?.id)?.readyForTurn ? "✓ ГОТОВ" : "ГОТОВ"}
             </button>
         )}
