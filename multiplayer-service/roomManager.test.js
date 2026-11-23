@@ -71,3 +71,13 @@ test("holds the next turn until every player is ready and only host commits it",
  assert.equal(committed.turnPhase,"waiting");
  assert.ok(committed.players.every(player=>!player.readyForTurn));
 });
+
+
+test("keeps restored rooms available for a week after a server restart", () => {
+ const {manager,advance}=setup(); const {host}=readyRoom(manager);
+ const restored=new RoomManager({now:()=>1000,codeFactory:()=>"ROOMX1",tokenFactory:()=>"unused",disconnectGraceMs:100});
+ restored.restore(manager.dump());
+ advance(24*60*60*1000);
+ assert.equal(restored.removeExpiredPlayers(),false);
+ assert.equal(restored.snapshot(host.room.code).players.length,2);
+});
