@@ -156,7 +156,7 @@ const server = createServer(async (req,res) => {
       res.writeHead(200, { ...corsHeaders, "content-type": "application/json", "cache-control": "no-store" });
       res.end(JSON.stringify({ ok: true, connections: config.connections.length, models: config.fallbackList.length }));
     } catch (error) {
-      const status = error.message === "PLAYER_AUTH_REQUIRED" || error.message === "HOST_ONLY" ? 403 : error.message === "AI_CONFIG_NOT_SET" ? 404 : error.message === "REQUEST_TOO_LARGE" ? 413 : 400;
+      const status = error.message === "PLAYER_AUTH_REQUIRED" || error.message === "HOST_ONLY" ? 403 : error.message === "AI_CONFIG_NOT_SET" ? 404 : error.message === "REQUEST_TOO_LARGE" ? 413 : error.message === "AI_CONFIG_STORE_WRITE_FAILED" ? 500 : 400;
       res.writeHead(status, { ...corsHeaders, "content-type": "application/json", "cache-control": "no-store" });
       res.end(JSON.stringify({ error: error.message || "AI_CONFIG_FAILED" }));
     }
@@ -325,7 +325,7 @@ wss.on("connection",ws => {
   });
   ws.on("close",()=>{ const s=sessions.get(ws); if(!s)return; sessions.delete(ws); const room=rooms.disconnect(s.code,s.playerId); if(room){ void persistRooms(); broadcast(s.code,"room_updated",{room}); } });
 });
-const cleanup=setInterval(()=>{ const before = new Set(rooms.dump().map((room) => room.code)); if(rooms.removeExpiredPlayers()) { void persistRooms(); const after = new Set(rooms.dump().map((room) => room.code)); for (const code of before) if (!after.has(code)) { aiConfigs.delete(code); void aiConfigStore.delete(code); } } },15000); cleanup.unref();
+const cleanup=setInterval(()=>{ const before = new Set(rooms.dump().map((room) => room.code)); if(rooms.removeExpiredPlayers()) { void persistRooms(); const after = new Set(rooms.dump().map((room) => room.code)); for (const code of before) if (!after.has(code)) { aiConfigs.delete(code); void aiConfigStore.delete(code).catch((error) => console.error("Could not remove expired room AI config:", error)); } } },15000); cleanup.unref();
 Promise.all([saves.ready, saves.loadRooms(), aiConfigStore.ready]).then(([, savedRooms]) => {
   for (const [code, config] of aiConfigStore.configs) aiConfigs.set(code, config);
   const restored = rooms.restore(savedRooms);
