@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createHash } from "node:crypto";
+import { Readable } from "node:stream";
 import { mkdir, writeFile, readFile as readStoredFile, rename } from "node:fs/promises";
 import { WebSocketServer, WebSocket } from "ws";
 import { RoomManager } from "./roomManager.js";
@@ -169,13 +170,13 @@ const server = createServer(async (req,res) => {
         headers: safeHeaders,
         ...(method === "GET" ? {} : { body: JSON.stringify(input.payload ?? {}) }),
       });
-      const body = Buffer.from(await upstream.arrayBuffer());
       res.writeHead(upstream.status, {
         ...corsHeaders,
         "content-type": upstream.headers.get("content-type") || "application/json",
         "cache-control": "no-store",
       });
-      res.end(body);
+      if (upstream.body) Readable.fromWeb(upstream.body).pipe(res);
+      else res.end();
     } catch (error) {
       const status = error.message === "PLAYER_AUTH_REQUIRED" ? 403 : error.message === "AI_CONFIG_NOT_SET" ? 503 : error.message === "REQUEST_TOO_LARGE" ? 413 : error.message === "AI_TARGET_NOT_ALLOWED" ? 403 : 400;
       res.writeHead(status, { ...corsHeaders, "content-type": "application/json", "cache-control": "no-store" });
