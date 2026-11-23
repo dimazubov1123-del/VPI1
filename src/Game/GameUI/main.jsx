@@ -405,7 +405,7 @@ const Main = ({
     let session = null;
     try { session = JSON.parse(localStorage.getItem(`vpi15-mp-session:${activeGame.id}`) || "null"); } catch { session = null; }
     if (session?.role !== "host" || !session.room || !session.player || !session.token) return undefined;
-    const base = String(session.server || "").replace(/^wss:/i, "https:").replace(/^ws:/i, "http:").replace(/\\/ws(?:\\/.*)?$/, "");
+    const base = String(session.server || "").replace(/^wss:/i, "https:").replace(/^ws:/i, "http:").replace(/\/ws(?:\/.*)?$/, "");
     if (!base) return undefined;
     let stopped = false;
     const sync = async () => {
