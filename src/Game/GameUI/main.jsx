@@ -397,6 +397,36 @@ const Main = ({
     return () => setMultiplayerAiOverride(null);
   }, [activeGame?.id, gameEntered]);
 
+  // The host refreshes the server-side secret store from the game's own AI
+  // Connections whenever the campaign opens or its AI settings change. Keys
+  // are never put in room snapshots, invite URLs or participant storage.
+  useEffect(() => {
+    if (!gameEntered || !activeGame?.id || typeof window === "undefined") return undefined;
+    let session = null;
+    try { session = JSON.parse(localStorage.getItem(`vpi15-mp-session:${activeGame.id}`) || "null"); } catch { session = null; }
+    if (session?.role !== "host" || !session.room || !session.player || !session.token) return undefined;
+    const base = String(session.server || "").replace(/^wss:/i, "https:").replace(/^ws:/i, "http:").replace(/\\/ws(?:\\/.*)?$/, "");
+    if (!base) return undefined;
+    let stopped = false;
+    const sync = async () => {
+      try {
+        await fetch(`${base}/ai-config/${encodeURIComponent(session.room)}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Player-Id": session.player,
+            "X-Reconnect-Token": session.token,
+          },
+          body: JSON.stringify(getMultiplayerAiConfig()),
+        });
+      } catch { /* The next settings change or campaign reload retries. */ }
+    };
+    void sync();
+    const onAiChanged = () => { if (!stopped) void sync(); };
+    window.addEventListener("ai:fallback-changed", onAiChanged);
+    return () => { stopped = true; window.removeEventListener("ai:fallback-changed", onAiChanged); };
+  }, [activeGame?.id, gameEntered]);
+
   // A lobby returns every ready player here with the same scenario bundle
   // and their assigned country. Import it through the regular library API,
   // then use the exact same createGame path as single-player's Play button.
