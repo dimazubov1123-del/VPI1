@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { RoomManager } from "./roomManager.js";
-function setup(){let now=1000,code=0,token=0;return {manager:new RoomManager({now:()=>now,codeFactory:()=>`ROOM${++code}`,tokenFactory:()=>`token-${++token}`,disconnectGraceMs:100}),advance:ms=>{now+=ms;}};}
+function setup(){let now=1000,code=0,token=0;return {manager:new RoomManager({now:()=>now,codeFactory:()=>`ROOM${String(++code).padStart(2,"0")}`,tokenFactory:()=>`token-${++token}`,disconnectGraceMs:100}),advance:ms=>{now+=ms;}};}
 function configuredRoom(manager){const host=manager.createRoom("Хозяин");const guest=manager.joinRoom(host.room.code,"Гость");manager.configureLobby(host.room.code,host.player.id,{scenarioId:"cold-war",scenarioName:"Холодная война",gameMode:"standard"});const players=manager.snapshot(host.room.code).players;manager.assignCountry(host.room.code,host.player.id,players[0].id,"USSR");manager.assignCountry(host.room.code,host.player.id,players[1].id,"USA");return {host,guest};}
 function readyRoom(manager){const {host,guest}=configuredRoom(manager);const hash="a".repeat(64);manager.setScenarioBundle(host.room.code,host.player.id,hash);manager.setScenarioReady(host.room.code,host.player.id,hash);manager.setScenarioReady(host.room.code,guest.player.id,hash);return {host,guest,hash};}
 test("creates a room and joins a second player",()=>{const {manager}=setup();const a=manager.createRoom("Хозяин");const b=manager.joinRoom(a.room.code,"Гость");assert.equal(b.room.players.length,2);assert.equal(b.room.hostId,a.player.id);});
