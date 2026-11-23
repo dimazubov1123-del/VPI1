@@ -4,7 +4,7 @@ const MAX_PLAYERS = 8;
 const MAX_STATE_BYTES = 256 * 1024;
 const makeCode = () => Array.from(randomBytes(6), b => ALPHABET[b % ALPHABET.length]).join("");
 const cleanName = value => String(value ?? "").trim().replace(/[<>\u0000-\u001f]/g, "").slice(0, 24) || "Игрок";
-const cleanText = (value, max = 100) => String(value ?? "").trim().replace(/[<>\\u0000-\\u001f]/g, "").slice(0, max);
+const cleanText = (value, max = 100) => String(value ?? "").trim().replace(/[<>\u0000-\u001f]/g, "").slice(0, max);
 
 export class RoomManager {
   constructor({ now = Date.now, codeFactory = makeCode, tokenFactory = () => randomBytes(24).toString("base64url"), disconnectGraceMs = 90000 } = {}) {
