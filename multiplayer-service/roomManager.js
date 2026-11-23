@@ -44,7 +44,11 @@ export class RoomManager {
     const scenarioId = cleanText(config.scenarioId, 100);
     const scenarioName = cleanText(config.scenarioName, 120);
     const gameMode = cleanText(config.gameMode || "standard", 40) || "standard";
-    const settings = config.settings && typeof config.settings === "object" && !Array.isArray(config.settings) ? this.#validateState(config.settings) : {};
+    const settings = config.settings === undefined
+      ? (room.config.settings || {})
+      : config.settings && typeof config.settings === "object" && !Array.isArray(config.settings)
+        ? this.#validateState(config.settings)
+        : {};
     const scenarioChanged = scenarioId !== room.config.scenarioId;
     room.config = { scenarioId, scenarioName, gameMode, settings };
     if (scenarioChanged) { room.scenarioHash = null; room.scenarioReady = new Set(); }
