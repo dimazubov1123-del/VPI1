@@ -2594,7 +2594,7 @@ const DateWidget = ({
                                 const incoming = entry?.inputs?.actions;
                                 if (Array.isArray(incoming)) {
                                     for (const action of incoming) {
-                                        const key = String(action?.id || JSON.stringify(action));
+                                        const key = String(action?.id || (entry.countryId || "country") + ":" + JSON.stringify(action));
                                         if (seen.has(key)) continue;
                                         seen.add(key);
                                         merged.push(action);
