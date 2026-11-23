@@ -729,8 +729,9 @@ export function getResolvedFallbackList() {
     if (!multiplayerAiOverride?.endpoint) return localEntries;
 
     const localCompatibleEntry = localEntries.find((entry) => entry.provider === "openai-compatible");
-    const localCompatible = connections.find((connection) => connection.id === localCompatibleEntry?.connectionId)
+    const localCompatible = connections.find((connection) => connection.id === localCompatibleEntry?.connectionId && connection.apiKey.trim())
         || connections.find((connection) => connection.provider === "openai-compatible" && connection.apiKey.trim())
+        || connections.find((connection) => connection.id === localCompatibleEntry?.connectionId)
         || connections.find((connection) => connection.provider === "openai-compatible");
     const model = multiplayerAiOverride.model || localCompatibleEntry?.model || localCompatible?.suggestedModel || "";
     const sharedEntry = {
