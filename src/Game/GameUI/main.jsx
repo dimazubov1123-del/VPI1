@@ -417,13 +417,11 @@ const Main = ({
         const scenario = library.scenarios.find((item) => item.id === importedId)
           || library.scenarios.find((item) => item.name === scenarioName);
         if (!scenario?.id) throw new Error("Сценарий импортирован, но игра не смогла найти его в библиотеке.");
-        localStorage.setItem("vpi15-mp-session", JSON.stringify({
-          room, hash, country, player, token, role: "player", connectedAt: Date.now(),
-        }));
         await createGame({
           name: `${scenario.name} — сетевая партия`,
           scenarioId: scenario.id,
           gamePatch: { country },
+          multiplayerSession: { room, hash, country, player, token, role: "player", connectedAt: Date.now(), server: "wss://vpi15-multiplayer-production.up.railway.app/ws" },
           setActive: true,
         });
         sessionStorage.setItem(launchKey, "done");
