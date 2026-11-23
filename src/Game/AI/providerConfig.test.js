@@ -757,3 +757,50 @@ test("the Agent Connection kind is offered only where a local server runs", () =
   assert.equal(config.providerOptionsFor({ localServer: true }).some((option) => option.value === "agent"), true);
   assert.equal(config.providerOptionsFor({ localServer: false }).some((option) => option.value === "agent"), false);
 });
+
+test("a multiplayer host endpoint is shared without replacing each player's local API key", () => {
+  store.set("ai_connections", JSON.stringify([{
+    id: "local-compatible",
+    provider: "openai-compatible",
+    name: "My local connection",
+    apiKey: "PLAYER_LOCAL_KEY",
+    endpoint: "http://localhost:1234/v1",
+  }]));
+  store.set("ai_fallback_list", JSON.stringify([{
+    id: "local-entry",
+    connectionId: "local-compatible",
+    model: "local-model",
+    customParamsOverride: "",
+    structuredMode: "auto",
+  }]));
+
+  config.setMultiplayerAiOverride({ endpoint: "https://host.example/v1", model: "shared-model" });
+  const [shared, fallback] = config.getResolvedFallbackList();
+  assert.equal(shared.endpoint, "https://host.example/v1");
+  assert.equal(shared.model, "shared-model");
+  assert.equal(shared.apiKey, "PLAYER_LOCAL_KEY");
+  assert.equal(fallback.endpoint, "http://localhost:1234/v1");
+  assert.equal(config.resolveTaskFallbackEntries("jumpForward").preferredEntryId, "multiplayer-shared-ai");
+
+  config.setMultiplayerAiOverride(null);
+  assert.equal(config.getResolvedFallbackList()[0].endpoint, "http://localhost:1234/v1");
+});
+
+test("a shared multiplayer endpoint cannot carry credentials in its URL", () => {
+  store.set("ai_connections", JSON.stringify([{
+    id: "local-compatible",
+    provider: "openai-compatible",
+    apiKey: "PLAYER_LOCAL_KEY",
+    endpoint: "http://localhost:1234/v1",
+  }]));
+  store.set("ai_fallback_list", JSON.stringify([{
+    id: "local-entry",
+    connectionId: "local-compatible",
+    model: "local-model",
+    customParamsOverride: "",
+    structuredMode: "auto",
+  }]));
+  config.setMultiplayerAiOverride({ endpoint: "https://user:secret@host.example/v1?api_key=leak", model: "shared-model" });
+  assert.equal(config.getResolvedFallbackList()[0].endpoint, "http://localhost:1234/v1");
+  config.setMultiplayerAiOverride(null);
+});

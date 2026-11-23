@@ -698,9 +698,56 @@ const resolveEntry = (entry, connectionsById) => {
 
 // The list in order, each entry resolved. An entry whose Connection is gone is
 // left out rather than failing every call.
+// A multiplayer lobby may supply one OpenAI-compatible endpoint for every
+// participant. The endpoint/model are public room settings; API keys are NEVER
+// copied from the host. Each participant's own compatible connection supplies
+// their local key (or an empty key for a server that does not require one).
+let multiplayerAiOverride = null;
+
+export function setMultiplayerAiOverride(value) {
+    const endpoint = String(value?.endpoint ?? "").trim().replace(/\/+$/, "");
+    let validEndpoint = "";
+    if (endpoint) {
+        try {
+            const parsed = new URL(endpoint);
+            if (["http:", "https:"].includes(parsed.protocol) && !parsed.username && !parsed.password && !parsed.search && !parsed.hash) {
+                validEndpoint = parsed.toString().replace(/\/+$/, "");
+            }
+        } catch { /* invalid shared endpoint: use the player's own list */ }
+    }
+    multiplayerAiOverride = validEndpoint ? {
+        endpoint: validEndpoint,
+        model: String(value?.model ?? "").trim(),
+    } : null;
+    try { window.dispatchEvent(new CustomEvent("ai:fallback-changed")); } catch { /* no window */ }
+}
+
 export function getResolvedFallbackList() {
-    const connectionsById = new Map(getConnections().map((connection) => [connection.id, connection]));
-    return getFallbackList().map((entry) => resolveEntry(entry, connectionsById)).filter(Boolean);
+    const connections = getConnections();
+    const connectionsById = new Map(connections.map((connection) => [connection.id, connection]));
+    const localEntries = getFallbackList().map((entry) => resolveEntry(entry, connectionsById)).filter(Boolean);
+    if (!multiplayerAiOverride?.endpoint) return localEntries;
+
+    const localCompatibleEntry = localEntries.find((entry) => entry.provider === "openai-compatible");
+    const localCompatible = connections.find((connection) => connection.id === localCompatibleEntry?.connectionId && connection.apiKey.trim())
+        || connections.find((connection) => connection.provider === "openai-compatible" && connection.apiKey.trim())
+        || connections.find((connection) => connection.id === localCompatibleEntry?.connectionId)
+        || connections.find((connection) => connection.provider === "openai-compatible");
+    const model = multiplayerAiOverride.model || localCompatibleEntry?.model || localCompatible?.suggestedModel || "";
+    const sharedEntry = {
+        id: "multiplayer-shared-ai",
+        connectionId: localCompatible?.id || "multiplayer-shared-ai",
+        provider: "openai-compatible",
+        connectionName: "Общий ИИ хоста",
+        apiKey: localCompatibleEntry?.apiKey || localCompatible?.apiKey || "",
+        endpoint: multiplayerAiOverride.endpoint,
+        model,
+        customParams: localCompatibleEntry?.customParams || localCompatible?.customParams || "",
+        structuredMode: "auto",
+        toolStrict: localCompatibleEntry?.toolStrict === true || localCompatible?.toolStrict === true,
+        label: describeEntry(model, "Общий ИИ хоста"),
+    };
+    return [sharedEntry, ...localEntries.filter((entry) => !(entry.provider === "openai-compatible" && entry.endpoint === multiplayerAiOverride.endpoint))];
 }
 
 // Whether an entry has what its provider needs before a call can go out: a
@@ -1105,6 +1152,12 @@ export function resolveTaskFallbackEntries(taskKey, sourceEntries = null) {
     const key = String(taskKey ?? "").trim();
     const entries = Array.isArray(sourceEntries) ? [...sourceEntries] : getResolvedFallbackList();
     if (!key || entries.length === 0) return { entries, preferredEntryId: "", implicit: false };
+
+    // In a multiplayer campaign the host's endpoint is authoritative for every
+    // task, even when a participant had saved per-task model picks locally.
+    if (multiplayerAiOverride?.endpoint && entries.some((entry) => entry.id === "multiplayer-shared-ai")) {
+        return { entries, preferredEntryId: "multiplayer-shared-ai", implicit: true };
+    }
 
     const explicitPick = getTaskPick(key);
     if (explicitPick && entries.some((entry) => entry.id === explicitPick)) {
