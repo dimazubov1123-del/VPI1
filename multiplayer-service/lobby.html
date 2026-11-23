@@ -75,7 +75,7 @@ $("uploadScenario").onclick=async()=>{
   const scenarioId="custom-"+result.hash.slice(0,16);
   $("scenarioId").add(new Option(scenarioName,scenarioId,true,true));
   $("scenarioName").value=scenarioName;selectedScenarioId=scenarioId;selectedMode=$("mode").value;
-  send("configure_lobby",{config:{scenarioId,scenarioName,gameMode:selectedMode,settings:{ai:{endpoint:String($("aiEndpoint").value||"").trim(),model:String($("aiModel").value||"").trim().slice(0,160)}}}});
+  send("configure_lobby",{config:{scenarioId,scenarioName,gameMode:selectedMode,settings:{}}});
   $("scenarioUploadInfo").textContent="Сценарий загружен ("+(result.bytes/1024/1024).toFixed(1)+" МБ). Игроки скачивают его…";
   void syncScenario();
  }catch(error){$("scenarioUploadInfo").textContent=error.message;}
