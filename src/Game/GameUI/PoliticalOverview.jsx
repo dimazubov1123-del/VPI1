@@ -10,6 +10,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { buildGovernmentPartyPresentation, buildPoliticalLandscapeViews } from "../../runtime/politicalPresentation.js";
 import { formatGameDateReadable } from "../../runtime/gameDates.js";
 import { PARTY_ROLE_LABELS, findIdeology, isListedSubideology } from "../../runtime/politics.js";
+import { russianPartyName, russianPoliticalDescription, russianPoliticalText } from "../../runtime/politicalRussian.js";
 
 const clean = (value) => String(value ?? "").replace(/\s+/g, " ").trim();
 const list = (value) => (Array.isArray(value) ? value.map(clean).filter(Boolean) : (clean(value) ? [clean(value)] : []));
@@ -230,7 +231,11 @@ const PartyMore = ({ party }) => {
 const PartyRow = ({ party, open, onToggle, legislatureSeats = 0, onHover = () => {} }) => {
   const family = findIdeology(party.ideologyFamily);
   const listed = isListedSubideology(party.ideologyFamily, party.subideology);
-  const abbreviations = [...new Set([party.shortNameNative, party.shortName].map(clean).filter(Boolean))].join(" · ");
+  const sourcePartyName = clean(party.name).toLocaleLowerCase("en");
+  const abbreviations = [...new Set([party.shortNameNative, party.shortName].map(clean).filter(Boolean))]
+    .filter((value) => !sourcePartyName.includes(`(${value.toLocaleLowerCase("en")})`))
+    .join(" · ");
+  const displayPartyName = russianPartyName(party.name);
   const role = roleOf(party);
   const seats = Number.isFinite(party.seats) ? party.seats : null;
   return (
@@ -248,10 +253,10 @@ const PartyRow = ({ party, open, onToggle, legislatureSeats = 0, onHover = () =>
             <div style={{ color: "rgba(255,255,255,0.9)", fontSize: "0.74rem", fontWeight: 800 }}>
               {party.isOther
                 ? <span>Other political support</span>
-                : <span data-no-translate>{party.name}{abbreviations && <span style={{ color: "rgba(255,255,255,0.45)", fontWeight: 700 }}> ({abbreviations})</span>}</span>}
+                : <span>{displayPartyName}{abbreviations && <span style={{ color: "rgba(255,255,255,0.45)", fontWeight: 700 }}> ({abbreviations})</span>}</span>}
             </div>
-            {!party.isOther && clean(party.nameNative) && clean(party.nameNative) !== clean(party.name) && (
-              <div data-no-translate style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.65rem", fontStyle: "italic", marginTop: "0.1rem" }}>{party.nameNative}</div>
+            {!party.isOther && clean(party.nameNative) && clean(party.nameNative) !== clean(displayPartyName) && (
+              <div data-no-translate style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.65rem", fontStyle: "italic", marginTop: "0.1rem" }}>{russianPoliticalText(party.nameNative)}</div>
             )}
           </div>
           {party.isOther
@@ -274,8 +279,8 @@ const PartyRow = ({ party, open, onToggle, legislatureSeats = 0, onHover = () =>
         {!party.isOther && (
           <div style={{ color: "rgba(255,255,255,0.5)", display: "flex", flexWrap: "wrap", fontSize: "0.62rem", gap: "0.15rem 0.7rem", marginTop: "0.2rem" }}>
             {party.leader && <span>Leader: <span style={{ color: "rgba(255,255,255,0.8)" }}>{party.leader}</span></span>}
-            {seats !== null && <span data-no-translate>{seats}{legislatureSeats ? `/${legislatureSeats}` : ""} seats</span>}
-            {Number.isFinite(party.support) && <span data-no-translate>{formatSupport(party.support)} support</span>}
+            {seats !== null && <span>{seats}{legislatureSeats ? `/${legislatureSeats}` : ""} seats</span>}
+            {Number.isFinite(party.support) && <span>{formatSupport(party.support)} support</span>}
             {party.supportApproximate && <span style={{ color: "rgba(253,230,138,0.62)", fontSize: "0.54rem", textTransform: "uppercase" }}>Approximate</span>}
             {clean(party.founded) && <span>Founded {party.founded}</span>}
           </div>
@@ -375,9 +380,9 @@ const PowerBlocLedger = ({ entries, selectedId, onSelect, onHover }) => (
 
 const GovernmentOverview = ({ profile, fallbackGovernment, fallbackLeader }) => {
   const government = profile?.government || {};
-  const form = clean(government.form || fallbackGovernment);
-  const headOfState = officeholderName(government.headOfState || fallbackLeader || profile?.leader);
-  const headOfGovernment = officeholderName(government.headOfGovernment);
+  const form = russianPoliticalText(clean(government.form || fallbackGovernment), { translateUnknown: true });
+  const headOfState = russianPoliticalText(officeholderName(government.headOfState || fallbackLeader || profile?.leader));
+  const headOfGovernment = russianPoliticalText(officeholderName(government.headOfGovernment));
   const governmentParties = buildGovernmentPartyPresentation(profile);
   const legislature = clean(government.legislature);
   const legislatureSeats = Number(government.legislatureSeats) > 0 ? Number(government.legislatureSeats) : 0;
@@ -408,7 +413,7 @@ const GovernmentOverview = ({ profile, fallbackGovernment, fallbackLeader }) => 
           <span style={{ color: "rgba(255,255,255,0.34)" }}>
             {governmentParties.names.length > 1 ? "Governing coalition:" : "Government:"}
           </span>{" "}
-          {governmentParties.names.join(" | ")}
+          {governmentParties.names.map((name) => russianPartyName(name)).join(" | ")}
         </div>
       )}
       {(legislature || legislatureSeats > 0 || nextElection) && (
@@ -483,11 +488,17 @@ const InstitutionPortfolio = ({ rows = [] }) => {
   if (!items.length) return null;
   const lifecycleLabel = (entry) => {
     const current = entry?.member;
-    if (current) return `${current.status || "member"}${current.role && current.role !== "member" ? ` / ${current.role}` : ""}`;
+    if (current) {
+      const status = russianPoliticalText(current.status || "member");
+      const role = current.role && current.role !== "member" ? russianPoliticalText(current.role) : "";
+      return role ? `${status} / ${role}` : status;
+    }
     const last = [...(entry?.history || [])].reverse().find(Boolean);
-    if (!last) return "historical";
-    if (["left", "withdrawn", "expelled"].includes(last.action)) return `former member · ${last.action}`;
-    return last.action || "historical";
+    if (!last) return russianPoliticalText("historical");
+    if (["left", "withdrawn", "expelled"].includes(last.action)) {
+      return `${russianPoliticalText("former member")} · ${russianPoliticalText(last.action)}`;
+    }
+    return russianPoliticalText(last.action || "historical");
   };
   return (
     <section className="oh-country-institution-ledger">
@@ -507,9 +518,9 @@ const InstitutionPortfolio = ({ rows = [] }) => {
             <div key={institution.id || institution.name} className="oh-country-institution-row" data-active={entry?.member ? "true" : "false"}>
               <span className="oh-country-institution-dot" aria-hidden="true" />
               <div className="oh-country-institution-main">
-                <div className="oh-country-institution-name">{institution.name || institution.id}</div>
+                <div className="oh-country-institution-name" data-no-translate>{russianPoliticalText(institution.name || institution.id)}</div>
                 <div className="oh-country-institution-meta">
-                  {[entry?.member?.sinceDate ? `since ${(formatGameDateReadable(entry.member.sinceDate) || entry.member.sinceDate)}` : "", pending.length ? `${pending.length} pending lifecycle matter${pending.length === 1 ? "" : "s"}` : "", recent?.date && !entry?.member ? `last change ${(formatGameDateReadable(recent.date) || recent.date)}` : ""].filter(Boolean).join(" · ") || (institution.kind || "institution")}
+                  {[entry?.member?.sinceDate ? `since ${(formatGameDateReadable(entry.member.sinceDate) || entry.member.sinceDate)}` : "", pending.length ? `${pending.length} pending lifecycle matter${pending.length === 1 ? "" : "s"}` : "", recent?.date && !entry?.member ? `last change ${(formatGameDateReadable(recent.date) || recent.date)}` : ""].filter(Boolean).join(" · ") || russianPoliticalText(institution.kind || "institution"))}
                 </div>
                 {pending.slice(0, 2).map((item) => (
                   <div key={item.id} className="oh-country-institution-pending">• {item.kind} · {item.status}{item.requestedStatus ? ` · ${item.requestedStatus}` : ""}</div>
@@ -628,7 +639,7 @@ export default function PoliticalOverview({ profile, fallbackGovernment = "", fa
                 {landscape.entries.slice(0, 4).map((entry) => (
                   <div key={entry.id} style={{ display: "flex", alignItems: "center", gap: "0.43rem", minWidth: 0 }}>
                     <span aria-hidden="true" style={{ backgroundColor: partyColor(entry), borderRadius: "999px", flexShrink: 0, height: "0.5rem", width: "0.5rem" }} />
-                    <span data-no-translate title={entry.name} style={{ color: "rgba(229,240,247,0.83)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.shortName || entry.name}</span>
+                    <span title={entry.name} style={{ color: "rgba(229,240,247,0.83)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{russianPartyName(entry.name)}</span>
                     <span data-no-translate style={{ color: "#b6d1e0", flexShrink: 0, fontVariantNumeric: "tabular-nums", fontWeight: 800 }}>{entry.displayValue || formatSupport(entry.support)}</span>
                   </div>
                 ))}
@@ -673,7 +684,7 @@ export default function PoliticalOverview({ profile, fallbackGovernment = "", fa
           <div style={sectionLabel}>National priorities</div>
           <div style={{ display: "flex", flexDirection: "column", gap: "0.34rem", marginTop: "0.48rem" }}>
             {goals.map((goal) => (
-              <div key={goal} style={{ color: "rgba(255,255,255,0.65)", fontSize: "0.67rem", lineHeight: 1.4 }}>• {goal}</div>
+              <div key={goal} style={{ color: "rgba(255,255,255,0.65)", fontSize: "0.67rem", lineHeight: 1.4 }}>• {russianPoliticalDescription(goal)}</div>
             ))}
           </div>
         </div>
