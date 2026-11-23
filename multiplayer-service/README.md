@@ -1,3 +1,18 @@
+## Encrypted host AI settings
+
+The multiplayer service stores host AI Connections, Fallback entries and task picks on the Railway volume at `/data/ai-configs.enc.json`, encrypted with AES-256-GCM. Players receive proxy markers only; provider API keys remain server-side.
+
+Railway production variables:
+
+- `AI_CONFIG_ENCRYPTION_KEY`: base64-encoded 32-byte random secret. Keep it private and back it up securely. Never commit it or share it with players.
+- `AI_CONFIG_FILE`: optional; defaults to `/data/ai-configs.enc.json`.
+
+The encryption key must remain unchanged across deployments. Losing or rotating it makes existing encrypted configurations unreadable; the host can re-enter the Connections in Settings → AI to create a new encrypted copy.
+
+Run service tests with `npm test`.
+
+---
+
 # ВПИ №15 — Multiplayer service
 
 Изолированный сетевой сервис для онлайн-кампаний Political Simulator: World Power. Одиночная кампания продолжает работать без сетевого соединения.
