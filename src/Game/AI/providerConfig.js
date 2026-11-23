@@ -710,7 +710,7 @@ export function setMultiplayerAiOverride(value) {
     if (endpoint) {
         try {
             const parsed = new URL(endpoint);
-            if (["http:", "https:"].includes(parsed.protocol) && !parsed.username && !parsed.password) {
+            if (["http:", "https:"].includes(parsed.protocol) && !parsed.username && !parsed.password && !parsed.search && !parsed.hash) {
                 validEndpoint = parsed.toString().replace(/\/+$/, "");
             }
         } catch { /* invalid shared endpoint: use the player's own list */ }
@@ -728,19 +728,22 @@ export function getResolvedFallbackList() {
     const localEntries = getFallbackList().map((entry) => resolveEntry(entry, connectionsById)).filter(Boolean);
     if (!multiplayerAiOverride?.endpoint) return localEntries;
 
-    const localCompatible = connections.find((connection) => connection.provider === "openai-compatible");
-    const model = multiplayerAiOverride.model || localEntries.find((entry) => entry.provider === "openai-compatible")?.model || localCompatible?.suggestedModel || "";
+    const localCompatibleEntry = localEntries.find((entry) => entry.provider === "openai-compatible");
+    const localCompatible = connections.find((connection) => connection.id === localCompatibleEntry?.connectionId)
+        || connections.find((connection) => connection.provider === "openai-compatible" && connection.apiKey.trim())
+        || connections.find((connection) => connection.provider === "openai-compatible");
+    const model = multiplayerAiOverride.model || localCompatibleEntry?.model || localCompatible?.suggestedModel || "";
     const sharedEntry = {
         id: "multiplayer-shared-ai",
         connectionId: localCompatible?.id || "multiplayer-shared-ai",
         provider: "openai-compatible",
         connectionName: "Общий ИИ хоста",
-        apiKey: localCompatible?.apiKey || "",
+        apiKey: localCompatibleEntry?.apiKey || localCompatible?.apiKey || "",
         endpoint: multiplayerAiOverride.endpoint,
         model,
-        customParams: localCompatible?.customParams || "",
+        customParams: localCompatibleEntry?.customParams || localCompatible?.customParams || "",
         structuredMode: "auto",
-        toolStrict: localCompatible?.toolStrict === true,
+        toolStrict: localCompatibleEntry?.toolStrict === true || localCompatible?.toolStrict === true,
         label: describeEntry(model, "Общий ИИ хоста"),
     };
     return [sharedEntry, ...localEntries.filter((entry) => !(entry.provider === "openai-compatible" && entry.endpoint === multiplayerAiOverride.endpoint))];
