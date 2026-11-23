@@ -698,9 +698,52 @@ const resolveEntry = (entry, connectionsById) => {
 
 // The list in order, each entry resolved. An entry whose Connection is gone is
 // left out rather than failing every call.
+// A multiplayer lobby may supply one OpenAI-compatible endpoint for every
+// participant. The endpoint/model are public room settings; API keys are NEVER
+// copied from the host. Each participant's own compatible connection supplies
+// their local key (or an empty key for a server that does not require one).
+let multiplayerAiOverride = null;
+
+export function setMultiplayerAiOverride(value) {
+    const endpoint = String(value?.endpoint ?? "").trim().replace(/\\/+$/, "");
+    let validEndpoint = "";
+    if (endpoint) {
+        try {
+            const parsed = new URL(endpoint);
+            if (["http:", "https:"].includes(parsed.protocol) && !parsed.username && !parsed.password) {
+                validEndpoint = parsed.toString().replace(/\\/+$/, "");
+            }
+        } catch { /* invalid shared endpoint: use the player's own list */ }
+    }
+    multiplayerAiOverride = validEndpoint ? {
+        endpoint: validEndpoint,
+        model: String(value?.model ?? "").trim(),
+    } : null;
+    try { window.dispatchEvent(new CustomEvent("ai:fallback-changed")); } catch { /* no window */ }
+}
+
 export function getResolvedFallbackList() {
-    const connectionsById = new Map(getConnections().map((connection) => [connection.id, connection]));
-    return getFallbackList().map((entry) => resolveEntry(entry, connectionsById)).filter(Boolean);
+    const connections = getConnections();
+    const connectionsById = new Map(connections.map((connection) => [connection.id, connection]));
+    const localEntries = getFallbackList().map((entry) => resolveEntry(entry, connectionsById)).filter(Boolean);
+    if (!multiplayerAiOverride?.endpoint) return localEntries;
+
+    const localCompatible = connections.find((connection) => connection.provider === "openai-compatible");
+    const model = multiplayerAiOverride.model || localEntries.find((entry) => entry.provider === "openai-compatible")?.model || localCompatible?.suggestedModel || "";
+    const sharedEntry = {
+        id: "multiplayer-shared-ai",
+        connectionId: localCompatible?.id || "multiplayer-shared-ai",
+        provider: "openai-compatible",
+        connectionName: "Общий ИИ хоста",
+        apiKey: localCompatible?.apiKey || "",
+        endpoint: multiplayerAiOverride.endpoint,
+        model,
+        customParams: localCompatible?.customParams || "",
+        structuredMode: "auto",
+        toolStrict: localCompatible?.toolStrict === true,
+        label: describeEntry(model, "Общий ИИ хоста"),
+    };
+    return [sharedEntry, ...localEntries.filter((entry) => !(entry.provider === "openai-compatible" && entry.endpoint === multiplayerAiOverride.endpoint))];
 }
 
 // Whether an entry has what its provider needs before a call can go out: a
