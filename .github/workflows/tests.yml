@@ -47,3 +47,19 @@ jobs:
       # The same step the installer workflows run before they build.
       - name: Run the tests
         run: npm test
+
+  multiplayer-service:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Install multiplayer service dependencies
+        run: npm --prefix multiplayer-service install --no-package-lock
+
+      - name: Run multiplayer service tests
+        run: npm --prefix multiplayer-service test
