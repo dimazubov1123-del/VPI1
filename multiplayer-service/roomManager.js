@@ -67,6 +67,7 @@ export class RoomManager {
     this.#assertHost(room, playerId);
     if (room.status !== "lobby") throw new Error("GAME_ALREADY_STARTED");
     if (!room.config.scenarioId || !room.config.scenarioName) throw new Error("SCENARIO_REQUIRED");
+    if (!room.scenarioHash) throw new Error("SCENARIO_BUNDLE_REQUIRED");
     if ([...room.players.values()].some(p => !p.countryId)) throw new Error("COUNTRIES_NOT_ASSIGNED");
     if (room.scenarioHash && [...room.players.values()].some(p => !room.scenarioReady?.has(p.id))) throw new Error("SCENARIO_DOWNLOADS_PENDING");
     room.status = "playing"; if (state != null) room.state = this.#validateState(state); room.updatedAt = this.now();
