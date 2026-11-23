@@ -8,11 +8,13 @@ import { mkdir, writeFile, readFile as readStoredFile, rename } from "node:fs/pr
 import { WebSocketServer, WebSocket } from "ws";
 import { RoomManager } from "./roomManager.js";
 import { SaveStore } from "./saveStore.js";
+import { AiConfigStore } from "./aiConfigStore.js";
 const PORT = Number(process.env.PORT || 3001);
 const HERE = dirname(fileURLToPath(import.meta.url));
 const origins = (process.env.ALLOWED_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean);
 const rooms = new RoomManager();
 const saves = new SaveStore();
+const aiConfigStore = new AiConfigStore();
 const persistRooms = async () => { try { await saves.saveRooms(rooms.dump()); } catch (error) { console.error("Could not persist multiplayer rooms:", error); } };
 const scenarioDir = process.env.SCENARIO_DIR || "/data/scenarios";
 const turnDir = process.env.TURN_DIR || "/data/turns";
@@ -140,14 +142,16 @@ const server = createServer(async (req,res) => {
       const code = aiConfigMatch[1], playerId = String(req.headers["x-player-id"] || ""), token = String(req.headers["x-reconnect-token"] || "");
       if (req.method === "GET") {
         if (!rooms.isPlayerToken(code, playerId, token)) throw new Error("PLAYER_AUTH_REQUIRED");
-        const config = aiConfigs.get(code);
+        const config = aiConfigs.get(code) || await aiConfigStore.get(code);
         if (!config) throw new Error("AI_CONFIG_NOT_SET");
+        aiConfigs.set(code, config);
         res.writeHead(200, { ...corsHeaders, "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
         res.end(JSON.stringify(publicAiConfig(config)));
         return;
       }
       if (!rooms.isHostToken(code, playerId, token) && !rooms.isHostTurnToken(code, playerId, token)) throw new Error("HOST_ONLY");
       const config = validateAiConfig(await readJsonRequest(req, MAX_AI_CONFIG_BYTES));
+      await aiConfigStore.set(code, config);
       aiConfigs.set(code, config);
       res.writeHead(200, { ...corsHeaders, "content-type": "application/json", "cache-control": "no-store" });
       res.end(JSON.stringify({ ok: true, connections: config.connections.length, models: config.fallbackList.length }));
@@ -169,8 +173,9 @@ const server = createServer(async (req,res) => {
       const method = String(input?.method || "POST").toUpperCase();
       if (!["GET", "POST"].includes(method)) throw new Error("AI_METHOD_NOT_ALLOWED");
       const headers = input?.headers && typeof input.headers === "object" && !Array.isArray(input.headers) ? input.headers : {};
-      const config = aiConfigs.get(code);
+      const config = aiConfigs.get(code) || await aiConfigStore.get(code);
       if (!config) throw new Error("AI_CONFIG_NOT_SET");
+      aiConfigs.set(code, config);
       const connection = connectionForAiRequest(config, target, headers);
       const secret = connection.apiKey;
       const marker = `VPI15_PROXY_KEY:${connection.id}`;
@@ -280,7 +285,7 @@ wss.on("connection",ws => {
       const msg=JSON.parse(raw.toString());
       if(!msg || typeof msg.type!=="string") throw new Error("INVALID_MESSAGE");
       const session=sessions.get(ws);
-      if(msg.type==="create_room") { if(session) throw new Error("ALREADY_IN_ROOM"); const ownerKey=String(msg.ownerKey||"").slice(0,100); if(ownerKey.length<20) throw new Error("HOST_KEY_REQUIRED"); const aiConfig=msg.aiConfig ? validateAiConfig(msg.aiConfig) : null; const created=rooms.createRoom(msg.name); if(aiConfig) aiConfigs.set(created.room.code,aiConfig); await attach(ws,created,ownerKey); return; }
+      if(msg.type==="create_room") { if(session) throw new Error("ALREADY_IN_ROOM"); const ownerKey=String(msg.ownerKey||"").slice(0,100); if(ownerKey.length<20) throw new Error("HOST_KEY_REQUIRED"); const aiConfig=msg.aiConfig ? validateAiConfig(msg.aiConfig) : null; const created=rooms.createRoom(msg.name); if(aiConfig) { await aiConfigStore.set(created.room.code, aiConfig); aiConfigs.set(created.room.code, aiConfig); } await attach(ws,created,ownerKey); return; }
       if(msg.type==="join_room") { if(session) throw new Error("ALREADY_IN_ROOM"); await attach(ws,rooms.joinRoom(msg.code,msg.name,msg.reconnectToken),String(msg.ownerKey||"").slice(0,100)||null); return; }
       if(!session) throw new Error("NOT_IN_ROOM");
       const {code,playerId}=session;
@@ -320,8 +325,9 @@ wss.on("connection",ws => {
   });
   ws.on("close",()=>{ const s=sessions.get(ws); if(!s)return; sessions.delete(ws); const room=rooms.disconnect(s.code,s.playerId); if(room){ void persistRooms(); broadcast(s.code,"room_updated",{room}); } });
 });
-const cleanup=setInterval(()=>{ if(rooms.removeExpiredPlayers()) void persistRooms(); },15000); cleanup.unref();
-Promise.all([saves.ready, saves.loadRooms()]).then(([, savedRooms]) => {
+const cleanup=setInterval(()=>{ const before = new Set(rooms.dump().map((room) => room.code)); if(rooms.removeExpiredPlayers()) { void persistRooms(); const after = new Set(rooms.dump().map((room) => room.code)); for (const code of before) if (!after.has(code)) { aiConfigs.delete(code); void aiConfigStore.delete(code); } } },15000); cleanup.unref();
+Promise.all([saves.ready, saves.loadRooms(), aiConfigStore.ready]).then(([, savedRooms]) => {
+  for (const [code, config] of aiConfigStore.configs) aiConfigs.set(code, config);
   const restored = rooms.restore(savedRooms);
   console.log(`Restored ${restored} multiplayer room(s) from persistent storage`);
   server.listen(PORT,"0.0.0.0",()=>console.log(`VPI15 multiplayer listening on :${PORT}`));
