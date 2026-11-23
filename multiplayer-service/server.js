@@ -44,7 +44,7 @@ function validateAiConfig(value) {
     const endpoint = String(item?.endpoint || "").slice(0, 2048);
     if (["openai-compatible", "anthropic-compatible"].includes(provider)) {
       const parsed = new URL(endpoint);
-      if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error("INVALID_AI_ENDPOINT");
+      if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error("INVALID_AI_ENDPOINT");
     }
     return {
       id, provider, apiKey, endpoint,
@@ -85,6 +85,7 @@ function connectionForAiRequest(config, target, headers) {
   const connection = config.connections.find((item) => item.id === match[1]);
   if (!connection) throw new Error("AI_CONNECTION_NOT_FOUND");
   const parsed = new URL(target);
+  if (parsed.protocol !== "https:") throw new Error("AI_TARGET_NOT_ALLOWED");
   if (connection.provider === "gemini") {
     if (parsed.hostname !== "generativelanguage.googleapis.com" || !parsed.pathname.startsWith("/v1beta/models/")) throw new Error("AI_TARGET_NOT_ALLOWED");
   } else if (connection.provider === "openai") {
