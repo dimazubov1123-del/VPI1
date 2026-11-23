@@ -164,7 +164,7 @@ export class RoomManager {
     return (room.diplomacyMessages || []).filter(message =>
       message.threadId === id &&
       (message.fromPlayerId === player.id || message.toPlayerId === player.id)
-    );
+    ).slice(-400);
   }
   disconnect(code, playerId) {
     const player = this.rooms.get(code)?.players.get(playerId);
