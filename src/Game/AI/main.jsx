@@ -638,10 +638,42 @@ const directFetch = (url, { method = "POST", headers = {}, payload, signal } = {
         signal,
     });
 
+// A multiplayer participant never calls a provider with their own key. The
+// host's existing in-game Connections/Fallback list is represented by harmless
+// per-connection markers; Railway replaces a marker with the host's secret.
+async function multiplayerAiFetch(url, options = {}) {
+    let session = null;
+    try { session = JSON.parse(localStorage.getItem("vpi15-mp-session") || "null"); } catch { /* no session */ }
+    if (session?.role !== "player" || !session.room || !session.player || !session.token) return null;
+    const markerPattern = /VPI15_PROXY_KEY:[A-Za-z0-9_-]+/;
+    const hasMarker = markerPattern.test(String(url))
+        || Object.values(options.headers || {}).some((value) => markerPattern.test(String(value)));
+    if (!hasMarker) return null;
+    const base = String(session.server || "").replace(/^wss:/i, "https:").replace(/^ws:/i, "http:").replace(/\\/ws(?:\\/.*)?$/, "");
+    if (!base) throw new Error("Сервер мультиплеера не настроен для общего ИИ.");
+    return fetch(`${base}/ai-proxy/${encodeURIComponent(session.room)}`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-Player-Id": session.player,
+            "X-Reconnect-Token": session.token,
+        },
+        body: JSON.stringify({
+            url: String(url),
+            method: options.method || "POST",
+            headers: options.headers || {},
+            payload: options.payload,
+        }),
+        signal: options.signal,
+    });
+}
+
 // fetch() rejects with a TypeError on a CORS or network failure (an HTTP error
 // status still resolves). An abort rejects with an AbortError, which must not
 // trigger the relay fallback.
 async function providerFetch(url, options = {}) {
+    const sharedResponse = await multiplayerAiFetch(url, options);
+    if (sharedResponse) return sharedResponse;
     const origin = endpointOrigin(url);
 
     if (PAGE_IS_LOCAL && relayOnlyOrigins.has(origin)) {
