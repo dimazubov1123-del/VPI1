@@ -4156,6 +4156,38 @@ const DateWidget = ({
         )}
         </div>
 
+        {multiplayerRoom?.status === "playing" && (
+            <button
+            type="button"
+            className="oh-tap"
+            title={multiplayerConnected ? "Готовность к следующему ходу" : "Нет соединения с сервером"}
+            aria-label="Готовность к следующему ходу"
+            disabled={!multiplayerConnected || multiplayerRoom.turnPhase === "host_turn"}
+            onClick={() => {
+                const player = multiplayerPlayerRef.current;
+                const room = multiplayerRoomRef.current;
+                const socket = multiplayerSocketRef.current;
+                if (!player || !room || !socket || socket.readyState !== WebSocket.OPEN) return;
+                const me = room.players?.find((entry) => entry.id === player.id);
+                socket.send(JSON.stringify({ type: "ready_for_turn", ready: !me?.readyForTurn }));
+                setMultiplayerSyncMessage(!me?.readyForTurn ? "Ожидаем готовности остальных игроков…" : "Готовность отменена.");
+            }}
+            style={{
+                ...buttonStyle,
+                width: "auto",
+                minWidth: "3.7rem",
+                padding: "0 0.4rem",
+                fontSize: "0.66rem",
+                fontWeight: 700,
+                color: multiplayerRoom.players?.find((entry) => entry.id === multiplayerPlayerRef.current?.id)?.readyForTurn
+                    ? "#86efac" : "rgba(255,255,255,0.82)",
+                opacity: multiplayerConnected ? 1 : 0.45,
+            }}
+            >
+            {multiplayerRoom.turnPhase === "host_turn" ? "ВСЕ ГОТОВЫ" :
+                multiplayerRoom.players?.find((entry) => entry.id === multiplayerPlayerRef.current?.id)?.readyForTurn ? "✓ ГОТОВ" : "ГОТОВ"}
+            </button>
+        )}
         <button
         type="button"
         className="oh-tap"
@@ -4186,6 +4218,21 @@ const DateWidget = ({
         {isLoading ? <SpinnerRing size={15} tone="rgba(255,255,255,0.28)" /> : "\u00BB"}
         </button>
         </div>
+        {multiplayerRoom && (
+            <span
+            title={multiplayerSyncMessage || (multiplayerConnected ? "Сетевая партия подключена" : "Переподключение…")}
+            style={{
+                position: "fixed", left: "50%", bottom: "4.2rem", transform: "translateX(-50%)",
+                maxWidth: "min(34rem, calc(100vw - 2rem))", padding: "0.35rem 0.7rem",
+                borderRadius: "999px", border: "1px solid rgba(148,163,184,0.24)",
+                background: "rgba(15,23,42,0.82)", color: "rgba(226,232,240,0.9)",
+                fontSize: "0.68rem", textAlign: "center", zIndex: 9997,
+                pointerEvents: "none", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+            }}
+            >
+            {multiplayerConnected ? (multiplayerSyncMessage || "Сетевая партия") : "Переподключение к мультиплееру…"}
+            </span>
+        )}
         </>
     );
 };
