@@ -526,7 +526,7 @@ const InstitutionPortfolio = ({ rows = [] }) => {
                     const changed = recent?.date && !entry?.member ? (formatGameDateReadable(recent.date) || recent.date) : "";
                     return [
                       since ? `${ru ? "с" : "since"} ${since}` : "",
-                      pending.length ? (ru ? `на рассмотрении: ${pending.length} вопрос(а) о членстве` : `${pending.length} pending lifecycle matter${pending.length === 1 ? "" : "s"}`) : "",
+                      pending.length ? (ru ? `на рассмотрении вопросов о членстве: ${pending.length}` : `${pending.length} pending lifecycle matter${pending.length === 1 ? "" : "s"}`) : "",
                       changed ? `${ru ? "последнее изменение" : "last change"} ${changed}` : "",
                     ].filter(Boolean).join(" · ") || russianPoliticalText(institution.kind || "institution");
                   })()}
