@@ -4,6 +4,7 @@ import { APP_HEIGHT, SAFE_BOTTOM, SAFE_LEFT, SAFE_RIGHT, useTouchPrimary } from 
 import dayjs from "dayjs";
 import advancedFormat from "dayjs/plugin/advancedFormat";
 import {
+    JSON_URLS,
     PMTILES_ARCHIVES,
     decodeVectorTile,
     getPmtilesArchive,
@@ -12,6 +13,7 @@ import {
     loadRegionCatalog,
     loadRollbackSnapshot,
     loadRollbackSnapshotIndex,
+    writeJson,
 } from "../../runtime/assets.js";
 import { undoableTurns } from "../../runtime/turnCommit.js";
 import { applyParkedTurn, canInterveneInLastTurn, declineInteractiveOffer, discardKeptTurn, heldSkipToRerun, interveneAfterEvent, loadParkedTurn, maybeGeneratePregameHistory, maybeOpenScenarioFronts, retryHeldPlayerEvents, retryPendingJumpSegment, retryPendingProjectsJump, retryPendingChecksJump, rollBackToSnapshot, simulateAutoJump, simulateTimelineJump } from "../AI/gameplayLazy.js";
@@ -63,7 +65,7 @@ import { foreseenFronts, onForeseenFronts } from "../AI/foreseenFronts.js";
 import { strikeBounds, strikesOfEvent } from "../../runtime/strikes.js";
 import { replayStrikes, showStrikesOfEvent } from "../Map/strikeStore.js";
 import { useIsMobile } from "../../runtime/useIsMobile.js";
-import { primeRuntimeValue } from "../../runtime/runtimeStore.js";
+import { getRuntimeValue, primeRuntimeValue } from "../../runtime/runtimeStore.js";
 import { useRuntimeState } from "../../runtime/useRuntimeState.js";
 import { MAP_SETTING_KEYS, getMapSettingDefaultOn, useMapSetting, useMapSettingValue, useMotionSetting } from "../../runtime/mapSettings.js";
 import { formatGameDateReadable, isGameDate, normalizeGameDate } from "../../runtime/gameDates.js";
@@ -2484,6 +2486,94 @@ const DateWidget = ({
     const setGameData = (game) => primeRuntimeValue("game", game);
     const setEvents = (next) => primeRuntimeValue("events", next);
     const setWorldState = (world) => primeRuntimeValue("world", world);
+    const multiplayerSessionRef = React.useRef(null);
+    const multiplayerRoomRef = React.useRef(null);
+    const multiplayerPlayerRef = React.useRef(null);
+    const multiplayerSocketRef = React.useRef(null);
+    const [multiplayerRoom, setMultiplayerRoom] = useState(null);
+    const [multiplayerConnected, setMultiplayerConnected] = useState(false);
+    const [multiplayerSyncMessage, setMultiplayerSyncMessage] = useState("");
+    useEffect(() => {
+        let disposed = false;
+        let socket = null;
+        let reconnectTimer = null;
+        let attempts = 0;
+        let session = null;
+        try { session = JSON.parse(localStorage.getItem("vpi15-mp-session") || "null"); } catch { session = null; }
+        if (!session?.room || !session?.token || !session?.player) return undefined;
+        multiplayerSessionRef.current = session;
+        const connect = () => {
+            if (disposed) return;
+            socket = new WebSocket("wss://vpi15-multiplayer-production.up.railway.app/ws");
+            multiplayerSocketRef.current = socket;
+            socket.onopen = () => {
+                attempts = 0;
+                setMultiplayerConnected(true);
+                socket.send(JSON.stringify({ type: "join_room", code: session.room, name: "Игрок", reconnectToken: session.token }));
+            };
+            socket.onmessage = async (event) => {
+                let message;
+                try { message = JSON.parse(event.data); } catch { return; }
+                if (message.type === "room") {
+                    multiplayerPlayerRef.current = message.player;
+                    multiplayerRoomRef.current = message.room;
+                    setMultiplayerRoom(message.room);
+                    return;
+                }
+                if (message.type === "room_updated" && message.room) {
+                    multiplayerRoomRef.current = message.room;
+                    setMultiplayerRoom(message.room);
+                    return;
+                }
+                if (message.type === "error") {
+                    setMultiplayerSyncMessage("Сеть: " + (message.code || "ошибка"));
+                    return;
+                }
+                if (message.type === "all_players_ready") {
+                    setMultiplayerSyncMessage("Все игроки готовы. Хост может провести ход.");
+                    return;
+                }
+                if (message.type === "turn_committed" && message.room) {
+                    multiplayerRoomRef.current = message.room;
+                    setMultiplayerRoom(message.room);
+                    if (multiplayerPlayerRef.current?.id === message.room.hostId) return;
+                    try {
+                        const response = await fetch("https://vpi15-multiplayer-production.up.railway.app/turn/" + encodeURIComponent(session.room), { cache: "no-store" });
+                        if (!response.ok) throw new Error("HTTP " + response.status);
+                        const raw = await response.text();
+                        const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw));
+                        const actualHash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+                        if (actualHash !== message.room.turnStateHash) throw new Error("Контрольная сумма хода не совпала");
+                        const bundle = JSON.parse(raw);
+                        const localGame = getRuntimeValue("game");
+                        if (bundle.game && JSON_URLS.game) await writeJson(JSON_URLS.game, { ...bundle.game, country: localGame?.country || session.country });
+                        if (Array.isArray(bundle.events) && JSON_URLS.events) await writeJson(JSON_URLS.events, bundle.events);
+                        if (bundle.world && JSON_URLS.world) await writeJson(JSON_URLS.world, bundle.world);
+                        if (Array.isArray(bundle.actions) && JSON_URLS.actions) await writeJson(JSON_URLS.actions, bundle.actions);
+                        if (Array.isArray(bundle.chat) && JSON_URLS.chat) await writeJson(JSON_URLS.chat, bundle.chat);
+                        if (bundle.intercepts && JSON_URLS.intercepts) await writeJson(JSON_URLS.intercepts, bundle.intercepts);
+                        setMultiplayerSyncMessage("Ход " + message.turnNumber + " синхронизирован.");
+                    } catch (error) {
+                        setMultiplayerSyncMessage("Не удалось получить ход: " + error.message);
+                    }
+                }
+            };
+            socket.onerror = () => setMultiplayerConnected(false);
+            socket.onclose = () => {
+                setMultiplayerConnected(false);
+                if (disposed) return;
+                attempts += 1;
+                reconnectTimer = window.setTimeout(connect, Math.min(15000, 1000 * (2 ** Math.min(attempts, 4))));
+            };
+        };
+        connect();
+        return () => {
+            disposed = true;
+            if (reconnectTimer) window.clearTimeout(reconnectTimer);
+            if (socket && socket.readyState < WebSocket.CLOSING) socket.close();
+            multiplayerSocketRef.current = null;
+        };
+    }, []);
     // The interactive event the last skip offered (runtime/interactiveOffer.js),
     // once the reveal has reached its event; none while a scene is in progress.
     const unseenEventIds = useUnseenEventIds();
