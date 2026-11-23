@@ -67,8 +67,14 @@ export class RoomManager {
     if (room.status !== "playing") throw new Error("GAME_NOT_STARTED");
     const player = room.players.get(String(playerId));
     if (!player) throw new Error("PLAYER_NOT_FOUND");
-    if (room.turnPhase === "host_turn") throw new Error("TURN_ALREADY_READY");
-    player.readyForTurn = Boolean(ready);
+    if (room.turnPhase === "host_turn" && ready) throw new Error("TURN_ALREADY_READY");
+    if (room.turnPhase === "host_turn" && !ready) {
+      for (const entry of room.players.values()) entry.readyForTurn = false;
+      room.turnInputs.clear();
+      room.turnPhase = "waiting";
+    } else {
+      player.readyForTurn = Boolean(ready);
+    }
     if (player.readyForTurn) {
       const payload = inputs && typeof inputs === "object" && !Array.isArray(inputs) ? this.#validateState(inputs) : {};
       room.turnInputs.set(player.id, { playerId: player.id, countryId: player.countryId || "", inputs: payload });
