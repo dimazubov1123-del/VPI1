@@ -823,6 +823,3 @@ test("only keyed, remotely reachable host connections are shared", () => {
   assert.deepEqual(shared.fallbackList.map(({ id }) => id), ["cloud-entry"]);
 });
 
-  assert.equal(config.getResolvedFallbackList()[0].endpoint, "http://localhost:1234/v1");
-  config.setMultiplayerAiOverride(null);
-});
