@@ -2537,8 +2537,6 @@ const DateWidget = ({
                         try {
                             const current = getRuntimeValue("actions");
                             const merged = Array.isArray(current) ? [...current] : [];
-                            const currentChat = getRuntimeValue("chat");
-                            const mergedChat = Array.isArray(currentChat) ? [...currentChat] : [];
                             const seen = new Set(merged.map((item) => String(item?.id || JSON.stringify(item))));
                             for (const entry of (message.turnInputs || [])) {
                                 const incoming = entry?.inputs?.actions;
@@ -2550,19 +2548,8 @@ const DateWidget = ({
                                         merged.push(action);
                                     }
                                 }
-                                const incomingChat = entry?.inputs?.chat;
-                                if (Array.isArray(incomingChat)) {
-                                    const chatSeen = new Set(mergedChat.map((item) => String(item?.id || JSON.stringify(item))));
-                                    for (const item of incomingChat) {
-                                        const key = String(item?.id || JSON.stringify(item));
-                                        if (chatSeen.has(key)) continue;
-                                        chatSeen.add(key);
-                                        mergedChat.push(item);
-                                    }
-                                }
                             }
                             if (JSON_URLS.actions) await writeJson(JSON_URLS.actions, merged);
-                            if (JSON_URLS.chat) await writeJson(JSON_URLS.chat, mergedChat);
                             setMultiplayerInputsReady(true);
                             setMultiplayerSyncMessage("Все готовы. Приказы участников собраны — можно проводить ход.");
                         } catch (error) {
@@ -4208,7 +4195,7 @@ const DateWidget = ({
                 const socket = multiplayerSocketRef.current;
                 if (!player || !room || !socket || socket.readyState !== WebSocket.OPEN) return;
                 const me = room.players?.find((entry) => entry.id === player.id);
-                socket.send(JSON.stringify({ type: "ready_for_turn", ready: !me?.readyForTurn, inputs: { actions: getRuntimeValue("actions") || [], chat: getRuntimeValue("chat") || [] } }));
+                socket.send(JSON.stringify({ type: "ready_for_turn", ready: !me?.readyForTurn, inputs: { actions: getRuntimeValue("actions") || [] } }));
                 setMultiplayerSyncMessage(!me?.readyForTurn ? "Ожидаем готовности остальных игроков…" : "Готовность отменена.");
             }}
             style={{
