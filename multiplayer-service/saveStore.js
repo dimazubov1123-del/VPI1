@@ -3,8 +3,8 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 export class SaveStore {
-  constructor({ filePath = process.env.SAVE_FILE || "/data/saves.json", now = Date.now } = {}) {
-    this.filePath = filePath; this.now = now; this.saves = []; this.writeQueue = Promise.resolve(); this.ready = this.#load();
+  constructor({ filePath = process.env.SAVE_FILE || "/data/saves.json", roomsFilePath = process.env.ROOMS_FILE || "/data/rooms.json", now = Date.now } = {}) {
+    this.filePath = filePath; this.roomsFilePath = roomsFilePath; this.now = now; this.saves = []; this.writeQueue = Promise.resolve(); this.ready = this.#load();
   }
   async #load() {
     await mkdir(dirname(this.filePath), { recursive: true });
@@ -17,6 +17,22 @@ export class SaveStore {
       const temp = this.filePath + ".tmp";
       await writeFile(temp, JSON.stringify(this.saves), "utf8");
       await rename(temp, this.filePath);
+    });
+    await this.writeQueue;
+  }
+  async loadRooms() {
+    await this.ready;
+    try { const value = JSON.parse(await readFile(this.roomsFilePath, "utf8")); return Array.isArray(value) ? value : []; }
+    catch (error) { if (error.code === "ENOENT") return []; throw error; }
+  }
+  async saveRooms(rooms) {
+    await this.ready;
+    const payload = JSON.stringify(Array.isArray(rooms) ? rooms : []);
+    this.writeQueue = this.writeQueue.then(async () => {
+      await mkdir(dirname(this.roomsFilePath), { recursive: true });
+      const temp = this.roomsFilePath + ".tmp";
+      await writeFile(temp, payload, "utf8");
+      await rename(temp, this.roomsFilePath);
     });
     await this.writeQueue;
   }
