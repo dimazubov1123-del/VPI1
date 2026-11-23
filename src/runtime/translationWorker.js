@@ -15,7 +15,7 @@
 // `outputs` has one entry per string: its translation, or "" when the model
 // gave none. One worker is one model: the first message names its language.
 
-import ortWasm from "oh-ort-transformers/ort-wasm-simd-threaded.wasm?url";
+import ortWasm from "oh-ort-transformers/ort-wasm.wasm?url";
 import { MODEL_FILES, groupByLength, modelFileUrl, modelSources, translationModelFor } from "./translationModels.js";
 import { deleteModelCache, openModelCache } from "./modelStore.js";
 
@@ -103,8 +103,12 @@ const load = () => {
       env.useCustomCache = true;
       env.customCache = store;
       // The runtime's glue is in the bundle; only its WebAssembly is a file.
+      // Use the portable non-SIMD WebAssembly build: some browsers and embedded
+      // webviews expose WebAssembly but cannot compile SIMD instructions.
+      // A SIMD-only binary makes the entire translation model fail to load.
+      env.backends.onnx.wasm.simd = false;
       env.backends.onnx.wasm.wasmPaths = { wasm: new URL(ortWasm, self.location.href).href };
-      env.backends.onnx.wasm.numThreads = THREADS;
+      env.backends.onnx.wasm.numThreads = 1;
       const loaded = new Map();
       let last = 0;
       const progress_callback = (event) => {
