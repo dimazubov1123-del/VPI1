@@ -44,6 +44,7 @@ import {
   getResolvedFallbackList,
   isFallbackListConfigured,
   syncAiDebugContext,
+  setMultiplayerAiOverride,
 } from "../AI/providerConfig.js";
 import { FallbackSwitchNotice } from "./fallbackSwitchNotice.jsx";
 import { AgentWaitingNotice } from "./agentWaitingNotice.jsx";
@@ -377,6 +378,21 @@ const Main = ({
   // it, reports it or runs anything for it.
   const gameEntered = useGameEntered();
 
+  // The host's multiplayer lobby shares only the OpenAI-compatible endpoint
+  // and model. Each participant keeps their own API key in this browser.
+  // The override exists only while this multiplayer game is entered; single
+  // player campaigns continue using the player's normal Fallback list.
+  useEffect(() => {
+    let session = null;
+    try {
+      if (gameEntered && activeGame?.id) {
+        session = JSON.parse(localStorage.getItem(`vpi15-mp-session:${activeGame.id}`) || "null");
+      }
+    } catch { session = null; }
+    setMultiplayerAiOverride(session?.aiConfig || null);
+    return () => setMultiplayerAiOverride(null);
+  }, [activeGame?.id, gameEntered]);
+
   // A lobby returns every ready player here with the same scenario bundle
   // and their assigned country. Import it through the regular library API,
   // then use the exact same createGame path as single-player's Play button.
@@ -388,11 +404,13 @@ const Main = ({
     const country = params.get("mpCountry");
     const player = params.get("mpPlayer");
     const token = params.get("mpToken");
+    const aiEndpoint = params.get("mpAiEndpoint") || "";
+    const aiModel = params.get("mpAiModel") || "";
     if (!room || !hash || !country || !player || !token) return;
 
     const cleanUrl = () => {
       const url = new URL(window.location.href);
-      ["mpRoom", "mpHash", "mpCountry", "mpPlayer", "mpToken"].forEach((key) => url.searchParams.delete(key));
+      ["mpRoom", "mpHash", "mpCountry", "mpPlayer", "mpToken", "mpAiEndpoint", "mpAiModel"].forEach((key) => url.searchParams.delete(key));
       window.history.replaceState({}, "", url.toString());
     };
     cleanUrl();
@@ -422,7 +440,7 @@ const Main = ({
           name: `${scenario.name} — сетевая партия`,
           scenarioId: scenario.id,
           gamePatch: { country },
-          multiplayerSession: { room, hash, country, player, token, role: "player", connectedAt: Date.now(), server: "wss://vpi15-multiplayer-production.up.railway.app/ws" },
+          multiplayerSession: { room, hash, country, player, token, role: "player", connectedAt: Date.now(), server: "wss://vpi15-multiplayer-production.up.railway.app/ws", aiConfig: aiEndpoint ? { endpoint: aiEndpoint, model: aiModel } : null },
           setActive: true,
         });
         sessionStorage.setItem(launchKey, "done");
@@ -466,7 +484,8 @@ const Main = ({
           if (message.type === "room" && !roomCreated) {
             roomCreated = true;
             const { room, player } = message;
-            socket.send(JSON.stringify({ type: "configure_lobby", config: { scenarioId: scenarioKey, scenarioName, gameMode: "standard" } }));
+            const sharedAi = getResolvedFallbackList().find((entry) => entry.provider === "openai-compatible" && entry.endpoint);
+            socket.send(JSON.stringify({ type: "configure_lobby", config: { scenarioId: scenarioKey, scenarioName, gameMode: "standard", settings: { ai: sharedAi ? { endpoint: sharedAi.endpoint, model: sharedAi.model || "" } : {} } } }));
             const onConfigured = async (nextEvent) => {
               const update = JSON.parse(nextEvent.data);
               if (update.type === "error") { socket.removeEventListener("message", onConfigured); fail(new Error(update.code)); return; }
