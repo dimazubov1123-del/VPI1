@@ -95,3 +95,16 @@ test("commits a ready turn with a content hash for clients to download", () => {
  assert.equal(committed.turnStateHash,hash);
  assert.equal(committed.turnNumber,2);
 });
+
+
+test("collects each country's queued actions when all players are ready", () => {
+ const {manager}=setup(); const {host,guest}=readyRoom(manager); const hash="e".repeat(64);
+ manager.setScenarioBundle(host.room.code,host.player.id,hash);
+ manager.setScenarioReady(host.room.code,host.player.id,hash);
+ manager.setScenarioReady(host.room.code,guest.player.id,hash);
+ manager.startGame(host.room.code,host.player.id,{round:1});
+ manager.setReadyForTurn(host.room.code,host.player.id,true,{actions:[{id:"host-order"}]});
+ const result=manager.setReadyForTurn(host.room.code,guest.player.id,true,{actions:[{id:"guest-order"}]});
+ assert.equal(result.allReady,true);
+ assert.deepEqual(result.turnInputs.map(entry=>entry.inputs.actions[0].id),["host-order","guest-order"]);
+});
