@@ -758,49 +758,71 @@ test("the Agent Connection kind is offered only where a local server runs", () =
   assert.equal(config.providerOptionsFor({ localServer: false }).some((option) => option.value === "agent"), false);
 });
 
-test("a multiplayer host endpoint is shared without replacing each player's local API key", () => {
+test("a multiplayer campaign uses the host's actual in-game AI connections and task picks", () => {
   store.set("ai_connections", JSON.stringify([{
-    id: "local-compatible",
+    id: "guest-local",
     provider: "openai-compatible",
-    name: "My local connection",
-    apiKey: "PLAYER_LOCAL_KEY",
-    endpoint: "http://localhost:1234/v1",
+    name: "Guest local",
+    apiKey: "GUEST_PRIVATE_KEY",
+    endpoint: "https://guest.example/v1",
   }]));
   store.set("ai_fallback_list", JSON.stringify([{
-    id: "local-entry",
-    connectionId: "local-compatible",
-    model: "local-model",
+    id: "guest-entry",
+    connectionId: "guest-local",
+    model: "guest-model",
     customParamsOverride: "",
     structuredMode: "auto",
   }]));
 
-  config.setMultiplayerAiOverride({ endpoint: "https://host.example/v1", model: "shared-model" });
-  const [shared, fallback] = config.getResolvedFallbackList();
-  assert.equal(shared.endpoint, "https://host.example/v1");
-  assert.equal(shared.model, "shared-model");
-  assert.equal(shared.apiKey, "PLAYER_LOCAL_KEY");
-  assert.equal(fallback.endpoint, "http://localhost:1234/v1");
-  assert.equal(config.resolveTaskFallbackEntries("jumpForward").preferredEntryId, "multiplayer-shared-ai");
+  config.setMultiplayerAiOverride({
+    connections: [{
+      id: "host-gemini",
+      provider: "gemini",
+      name: "Host Gemini",
+      apiKey: "VPI15_PROXY_KEY:host-gemini",
+      endpoint: "",
+      customParams: "",
+      toolStrict: false,
+      suggestedModel: "",
+    }],
+    fallbackList: [{
+      id: "host-entry",
+      connectionId: "host-gemini",
+      model: "gemini-3.5-flash-lite",
+      customParamsOverride: "",
+      structuredMode: "auto",
+    }],
+    taskPicks: { jumpForward: "host-entry" },
+  });
+
+  const [shared] = config.getResolvedFallbackList();
+  assert.equal(shared.provider, "gemini");
+  assert.equal(shared.connectionName, "Host Gemini");
+  assert.equal(shared.model, "gemini-3.5-flash-lite");
+  assert.equal(shared.apiKey, "VPI15_PROXY_KEY:host-gemini");
+  assert.equal(config.getResolvedFallbackList().length, 1, "guest's local connection is not used");
+  assert.equal(config.resolveTaskFallbackEntries("jumpForward").preferredEntryId, "host-entry");
 
   config.setMultiplayerAiOverride(null);
-  assert.equal(config.getResolvedFallbackList()[0].endpoint, "http://localhost:1234/v1");
+  assert.equal(config.getResolvedFallbackList()[0].apiKey, "GUEST_PRIVATE_KEY", "single-player settings are restored");
 });
 
-test("a shared multiplayer endpoint cannot carry credentials in its URL", () => {
-  store.set("ai_connections", JSON.stringify([{
-    id: "local-compatible",
-    provider: "openai-compatible",
-    apiKey: "PLAYER_LOCAL_KEY",
-    endpoint: "http://localhost:1234/v1",
-  }]));
-  store.set("ai_fallback_list", JSON.stringify([{
-    id: "local-entry",
-    connectionId: "local-compatible",
-    model: "local-model",
-    customParamsOverride: "",
-    structuredMode: "auto",
-  }]));
-  config.setMultiplayerAiOverride({ endpoint: "https://user:secret@host.example/v1?api_key=leak", model: "shared-model" });
+test("only keyed, remotely reachable host connections are shared", () => {
+  store.set("ai_connections", JSON.stringify([
+    { id: "cloud", provider: "gemini", name: "Gemini", apiKey: "HOST_KEY" },
+    { id: "local", provider: "openai-compatible", name: "Ollama", apiKey: "LOCAL_KEY", endpoint: "http://localhost:11434/v1" },
+    { id: "empty", provider: "openai", name: "Empty", apiKey: "" },
+  ]));
+  store.set("ai_fallback_list", JSON.stringify([
+    { id: "cloud-entry", connectionId: "cloud", model: "gemini-3.5-flash-lite" },
+    { id: "local-entry", connectionId: "local", model: "qwen" },
+    { id: "empty-entry", connectionId: "empty", model: "gpt-6-luna" },
+  ]));
+  const shared = config.getMultiplayerAiConfig();
+  assert.deepEqual(shared.connections.map(({ id }) => id), ["cloud"]);
+  assert.deepEqual(shared.fallbackList.map(({ id }) => id), ["cloud-entry"]);
+});
+
   assert.equal(config.getResolvedFallbackList()[0].endpoint, "http://localhost:1234/v1");
   config.setMultiplayerAiOverride(null);
 });
