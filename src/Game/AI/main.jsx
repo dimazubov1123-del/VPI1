@@ -672,6 +672,10 @@ async function multiplayerAiFetch(url, options = {}) {
 // status still resolves). An abort rejects with an AbortError, which must not
 // trigger the relay fallback.
 async function providerFetch(url, options = {}) {
+    if (options.body !== undefined && options.payload === undefined) {
+        try { options = { ...options, payload: JSON.parse(options.body) }; }
+        catch { throw new Error("AI request body must be valid JSON."); }
+    }
     const sharedResponse = await multiplayerAiFetch(url, options);
     if (sharedResponse) return sharedResponse;
     const origin = endpointOrigin(url);
@@ -1234,7 +1238,7 @@ async function callGemini(systemPrompt, history, {
         let chatToolsRefused = false;
         for (let pass = 1; ; pass += 1) {
             const chatTools = chatLookupsFor(tool, onChunk, lookupTools, chatToolsRefused);
-            const response = await fetch(streamUrl, {
+            const response = await providerFetch(streamUrl, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -1302,7 +1306,7 @@ async function callGemini(systemPrompt, history, {
     // requests and their forms are geminiAnswer.js's (askGeminiAnswer), the
     // provider's own rules and errors handed to it here.
     return askGeminiAnswer({
-        fetch: (url, init) => fetch(url, init),
+        fetch: (url, init) => providerFetch(url, init),
         url: (stream) => (stream ? getGeminiStreamUrl(model, apiKey) : getGeminiUrl(model, apiKey)),
         retryOrFail: (response, attempt) => retryOrFail(response, attempt),
         sleep: (ms) => sleep(ms, signal),
@@ -2204,7 +2208,7 @@ async function callAnthropic(systemPrompt, history, {
         // The request goes out now: the skip's progress row starts its count
         // from here, again on every retry (requestActivity.js).
         onSend?.();
-        const response = await fetch(`${ANTHROPIC_API_ENDPOINT}/messages`, {
+        const response = await providerFetch(`${ANTHROPIC_API_ENDPOINT}/messages`, {
             method: "POST",
             headers,
             body: JSON.stringify(body),
@@ -4459,7 +4463,7 @@ export async function submitAIBatch({ customId, systemPrompt, history, taskKey, 
         : null;
 
     try {
-        const response = await fetch(`${ANTHROPIC_API_ENDPOINT}/messages/batches`, {
+        const response = await providerFetch(`${ANTHROPIC_API_ENDPOINT}/messages/batches`, {
             method: "POST",
             headers: { "Content-Type": "application/json", ...anthropicBatchHeaders(apiKey) },
             body: JSON.stringify({ requests: [{ custom_id: customId, params }] }),
@@ -4506,7 +4510,7 @@ export async function retrieveAIBatch(customId) {
 
     let batch;
     try {
-        const response = await fetch(`${ANTHROPIC_API_ENDPOINT}/messages/batches/${encodeURIComponent(batchId)}`, { headers });
+        const response = await providerFetch(`${ANTHROPIC_API_ENDPOINT}/messages/batches/${encodeURIComponent(batchId)}`, { method: "GET", headers });
         if (response.status === 404) {
             pendingBatchIds.delete(customId);
             return { status: "failed", payload: null, rawText: "" };
@@ -4525,7 +4529,7 @@ export async function retrieveAIBatch(customId) {
     pendingBatchIds.delete(customId);
 
     try {
-        const resultsResponse = await fetch(batch.results_url, { headers });
+        const resultsResponse = await providerFetch(batch.results_url, { method: "GET", headers });
         if (!resultsResponse.ok) return { status: "failed", payload: null, rawText: "" };
         const jsonl = await resultsResponse.text();
         for (const line of jsonl.split("\n")) {
