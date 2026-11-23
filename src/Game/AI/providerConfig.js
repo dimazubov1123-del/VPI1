@@ -679,8 +679,8 @@ export function getMultiplayerAiConfig() {
             const host = endpoint.hostname.toLowerCase();
             return ["http:", "https:"].includes(endpoint.protocol)
                 && !["localhost", "127.0.0.1", "::1"].includes(host)
-                && !/^10\\./.test(host) && !/^192\\.168\\./.test(host)
-                && !/^172\\.(1[6-9]|2[0-9]|3[01])\\./.test(host);
+                && !/^10\./.test(host) && !/^192\.168\./.test(host)
+                && !/^172\.(1[6-9]|2[0-9]|3[01])\./.test(host);
         } catch { return false; }
     });
     const allowed = new Set(connections.map((connection) => connection.id));
