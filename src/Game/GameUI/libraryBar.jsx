@@ -3494,8 +3494,14 @@ const LibraryTopBar = ({ onOpenSettings }) => {
     try {
       await activateGame(gameId);
     } catch (nextError) {
+      // Keep the player on the Games page and show the actual activation error.
+      // Previously this was stored only in the editor drawer, which is closed
+      // here, so a failed request looked like Play did nothing.
       setMenuOpen(true);
       setEditorError(nextError.message);
+      if (typeof window !== "undefined") {
+        window.alert(`Не удалось открыть сохранённую игру. Причина: ${nextError?.message || "неизвестная ошибка"}`);
+      }
     }
   };
 
